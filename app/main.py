@@ -33,6 +33,7 @@ TOOLS = {
         "descricao": "Converte videos (mov, avi, mkv, webm) para MP4 H.264.",
         "icone": "bi-film",
         "aceita": "video/*,.mkv,.mov,.avi,.webm",
+        "controles": "video",
         "modulo": convert_mp4,
     },
     "convert-webm": {
@@ -41,6 +42,7 @@ TOOLS = {
         "descricao": "Converte videos (mp4, mov, avi, mkv) para WebM VP9.",
         "icone": "bi-camera-video",
         "aceita": "video/*,.mkv,.mov,.avi",
+        "controles": "video",
         "modulo": convert_webm,
     },
     "convert-webp": {
@@ -49,6 +51,7 @@ TOOLS = {
         "descricao": "Converte imagens para WebP (largura maxima configuravel).",
         "icone": "bi-image",
         "aceita": "image/*",
+        "controles": "webp",
         "modulo": convert_webp,
     },
     "unlock-pdf": {
@@ -57,6 +60,7 @@ TOOLS = {
         "descricao": "Remove senha de PDFs usando lista pessoal cadastrada.",
         "icone": "bi-file-earmark-lock",
         "aceita": ".pdf,application/pdf",
+        "controles": "unlock",
         "modulo": unlock_pdf,
     },
     "wp-screenshot": {
@@ -65,6 +69,7 @@ TOOLS = {
         "descricao": "Padroniza imagens em 1200x900 PNG otimizado.",
         "icone": "bi-window",
         "aceita": "image/*",
+        "controles": "none",
         "modulo": wp_screenshot,
     },
 }
@@ -120,13 +125,9 @@ def tool_page(request: Request, slug: str):
             {"request": request, "tool": tool, "senhas": db.listar_senhas()},
         )
 
-    extra = {}
-    if slug == "convert-webp":
-        extra["mostrar_largura"] = True
-
     return templates.TemplateResponse(
         "tool.html",
-        {"request": request, "tool": tool, **extra},
+        {"request": request, "tool": tool, "controles": tool.get("controles", "none")},
     )
 
 
@@ -135,6 +136,7 @@ async def processar(
     slug: str,
     arquivos: list[UploadFile] = File(...),
     max_width: int | None = Form(None),
+    quality: int | None = Form(None),
 ):
     tool = TOOLS.get(slug)
     if not tool:
@@ -146,9 +148,13 @@ async def processar(
     if not entradas:
         raise HTTPException(status_code=400, detail="Nenhum arquivo enviado")
 
+    largura = max_width if max_width and max_width > 0 else None
+    q = quality if quality and quality > 0 else 100
+
     if slug == "convert-webp":
-        largura = max_width if max_width and max_width > 0 else None
-        resultados = tool["modulo"].processar(entradas, output_dir, max_width=largura)
+        resultados = tool["modulo"].processar(entradas, output_dir, max_width=largura, quality=q)
+    elif slug in ("convert-mp4", "convert-webm"):
+        resultados = tool["modulo"].processar(entradas, output_dir, max_width=largura, quality=q)
     elif slug == "unlock-pdf":
         resultados = tool["modulo"].processar(entradas, output_dir, senhas=db.senhas_como_lista())
     else:
@@ -159,6 +165,49 @@ async def processar(
             r["download_url"] = f"/download/{sessao_id}/{r['saida']}"
 
     return JSONResponse({"sessao_id": sessao_id, "resultados": resultados})
+
+
+@app.post("/api/webp/estimar")
+async def api_webp_estimar(
+    arquivo: UploadFile = File(...),
+    quality: int = Form(100),
+    max_width: int | None = Form(None),
+):
+    conteudo = await arquivo.read()
+    try:
+        largura = max_width if max_width and max_width > 0 else None
+        tamanho = convert_webp.estimar(conteudo, max_width=largura, quality=quality)
+        return {
+            "ok": True,
+            "original": len(conteudo),
+            "estimado": tamanho,
+            "nome": arquivo.filename,
+        }
+    except Exception as e:
+        return JSONResponse(status_code=400, content={"ok": False, "msg": str(e)})
+
+
+@app.post("/api/video/estimar")
+async def api_video_estimar(
+    slug: str = Form(...),
+    arquivo: UploadFile = File(...),
+    quality: int = Form(100),
+    max_width: int | None = Form(None),
+):
+    if slug not in ("convert-mp4", "convert-webm"):
+        raise HTTPException(status_code=400, detail="Slug invalido")
+    conteudo = await arquivo.read()
+    largura = max_width if max_width and max_width > 0 else None
+    modulo = TOOLS[slug]["modulo"]
+    resultado = modulo.estimar(
+        conteudo,
+        nome_original=arquivo.filename or "video.mp4",
+        max_width=largura,
+        quality=quality,
+    )
+    if not resultado.get("ok"):
+        return JSONResponse(status_code=400, content=resultado)
+    return resultado
 
 
 @app.get("/download/{sessao_id}/{nome}")

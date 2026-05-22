@@ -22,7 +22,7 @@ def processar(arquivos: list[Path], pasta_saida: Path) -> list[dict]:
             })
             continue
 
-        saida = pasta_saida / f"{entrada.stem}_screenshot.png"
+        saida = pasta_saida / "screenshot.png"
         try:
             img = Image.open(entrada)
             if img.mode in ("RGBA", "LA", "P"):

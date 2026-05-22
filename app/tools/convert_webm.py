@@ -1,15 +1,38 @@
 import subprocess
+import tempfile
 from pathlib import Path
 
-import imageio_ffmpeg
+from . import _video_common as vc
 
 EXTENSOES = (".mp4", ".mov", ".avi", ".mkv")
 
 
-def processar(arquivos: list[Path], pasta_saida: Path) -> list[dict]:
+def _comando(entrada: Path, saida: Path, max_width: int | None, quality: int, cpu_used: int) -> list[str]:
+    return [
+        vc.ffmpeg_exe(),
+        "-y",
+        "-i", str(entrada),
+        *vc.filtro_escala(max_width),
+        "-c:v", "libvpx-vp9",
+        "-b:v", "0",
+        "-crf", str(vc.crf_vp9(quality)),
+        "-deadline", "good",
+        "-cpu-used", str(cpu_used),
+        "-c:a", "libopus",
+        "-threads", "0",
+        str(saida),
+    ]
+
+
+def processar(
+    arquivos: list[Path],
+    pasta_saida: Path,
+    max_width: int | None = None,
+    quality: int = 100,
+) -> list[dict]:
     pasta_saida.mkdir(parents=True, exist_ok=True)
-    ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
     resultados = []
+    crf = vc.crf_vp9(quality)
 
     for entrada in arquivos:
         if entrada.suffix.lower() not in EXTENSOES:
@@ -22,25 +45,17 @@ def processar(arquivos: list[Path], pasta_saida: Path) -> list[dict]:
             continue
 
         saida = pasta_saida / f"{entrada.stem}.webm"
-        comando = [
-            ffmpeg,
-            "-y",
-            "-i", str(entrada),
-            "-c:v", "libvpx-vp9",
-            "-b:v", "0",
-            "-crf", "18",
-            "-c:a", "libopus",
-            "-threads", "0",
-            str(saida),
-        ]
-
         try:
-            subprocess.run(comando, check=True, capture_output=True)
+            subprocess.run(
+                _comando(entrada, saida, max_width, quality, cpu_used=2),
+                check=True,
+                capture_output=True,
+            )
             resultados.append({
                 "entrada": entrada.name,
                 "saida": saida.name,
                 "ok": True,
-                "msg": "Convertido",
+                "msg": f"Convertido (CRF {crf})",
             })
         except subprocess.CalledProcessError as e:
             resultados.append({
@@ -51,3 +66,58 @@ def processar(arquivos: list[Path], pasta_saida: Path) -> list[dict]:
             })
 
     return resultados
+
+
+def estimar(
+    arquivo_bytes: bytes,
+    nome_original: str,
+    max_width: int | None = None,
+    quality: int = 100,
+    amostra_segundos: float = 4.0,
+) -> dict:
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp)
+        sufixo = Path(nome_original).suffix or ".mp4"
+        entrada = tmp_path / f"in{sufixo}"
+        entrada.write_bytes(arquivo_bytes)
+
+        dur = vc.duracao_segundos(entrada)
+        if not dur or dur <= 0:
+            return {"ok": False, "msg": "Nao foi possivel ler a duracao do video"}
+
+        amostra = min(amostra_segundos, dur)
+        saida = tmp_path / "sample.webm"
+
+        cmd = [
+            vc.ffmpeg_exe(),
+            "-y",
+            "-t", str(amostra),
+            "-i", str(entrada),
+            *vc.filtro_escala(max_width),
+            "-c:v", "libvpx-vp9",
+            "-b:v", "0",
+            "-crf", str(vc.crf_vp9(quality)),
+            "-deadline", "realtime",
+            "-cpu-used", "8",
+            "-c:a", "libopus",
+            "-threads", "0",
+            str(saida),
+        ]
+        try:
+            subprocess.run(cmd, check=True, capture_output=True)
+        except subprocess.CalledProcessError as e:
+            return {
+                "ok": False,
+                "msg": f"Erro ffmpeg: {e.stderr.decode(errors='ignore')[-200:]}",
+            }
+
+        sample_size = saida.stat().st_size
+        estimado = int(sample_size * dur / amostra)
+        return {
+            "ok": True,
+            "original": len(arquivo_bytes),
+            "estimado": estimado,
+            "duracao": dur,
+            "amostra_segundos": amostra,
+            "aviso": "VP9 em modo rapido. O resultado real pode ser ate ~25% diferente.",
+        }

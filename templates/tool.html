@@ -2,26 +2,6 @@
 
 {% block title %}{{ tool.nome }} - Personal Hub{% endblock %}
 
-{% block scripts %}
-<script>
-    (function () {
-        const chk = document.getElementById('chk-redimensionar');
-        if (!chk) return;
-        const campo = document.getElementById('campo-largura');
-        const input = campo.querySelector('input[name="max_width"]');
-        chk.addEventListener('change', () => {
-            if (chk.checked) {
-                campo.classList.remove('d-none');
-                input.disabled = false;
-            } else {
-                campo.classList.add('d-none');
-                input.disabled = true;
-            }
-        });
-    })();
-</script>
-{% endblock %}
-
 {% block content %}
 <div class="d-flex align-items-center mb-4">
     <a href="/" class="btn btn-sm btn-outline-secondary me-3">
@@ -41,7 +21,7 @@
                 <input class="form-control" type="file" name="arquivos" accept="{{ tool.aceita }}" multiple required>
             </div>
 
-            {% if mostrar_largura %}
+            {% if controles in ("webp", "video") %}
             <div class="mb-3">
                 <div class="form-check mb-2">
                     <input class="form-check-input" type="checkbox" id="chk-redimensionar">
@@ -50,10 +30,52 @@
                     </label>
                 </div>
                 <div id="campo-largura" class="d-none" style="max-width: 240px;">
-                    <input class="form-control" type="number" name="max_width" value="500" min="1" disabled>
-                    <small class="text-secondary">Mantem proporcao. Imagens menores que esse valor nao sao alteradas.</small>
+                    <input class="form-control" type="number" name="max_width" value="{% if controles == 'video' %}1280{% else %}500{% endif %}" min="1" disabled>
+                    <small class="text-secondary">Mantem proporcao. {% if controles == "video" %}Altura ajusta automaticamente.{% else %}Imagens menores nao sao alteradas.{% endif %}</small>
                 </div>
             </div>
+
+            <div class="mb-3" style="max-width: 360px;">
+                <label class="form-label d-flex justify-content-between">
+                    <span>Qualidade</span>
+                    <span><strong id="quality-value">100</strong>%</span>
+                </label>
+                <input type="range" class="form-range" name="quality" id="input-quality" min="1" max="100" value="100">
+                <small class="text-secondary">
+                    {% if controles == "webp" %}
+                        100% = sem perda (lossless). Abaixo disso = compressao com perda.
+                    {% else %}
+                        100% = qualidade alta (CRF baixo). Quanto menor, mais comprimido.
+                    {% endif %}
+                </small>
+            </div>
+
+            {% if controles == "webp" %}
+            <div id="estimativa-wrap" class="alert alert-secondary py-2 d-none" style="max-width: 360px;">
+                <div class="small">
+                    <div><strong>Estimativa</strong> <span class="text-secondary">(1º arquivo)</span></div>
+                    <div>Original: <span id="est-original">-</span></div>
+                    <div>WebP: <span id="est-novo">-</span> <span id="est-delta" class="text-success"></span></div>
+                </div>
+            </div>
+            {% endif %}
+
+            {% if controles == "video" %}
+            <div class="mb-3">
+                <button type="button" id="btn-estimar-video" class="btn btn-outline-info btn-sm">
+                    <i class="bi bi-calculator"></i> Estimar tamanho (1º arquivo)
+                </button>
+                <div id="estimativa-wrap" class="alert alert-secondary py-2 mt-2 d-none" style="max-width: 420px;">
+                    <div class="small">
+                        <div><strong>Estimativa</strong> <span class="text-secondary">(baseada em 4s codificados)</span></div>
+                        <div>Duracao: <span id="est-duracao">-</span></div>
+                        <div>Original: <span id="est-original">-</span></div>
+                        <div>Saida: <span id="est-novo">-</span> <span id="est-delta" class="text-success"></span></div>
+                        <div id="est-aviso" class="text-warning small mt-1"></div>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
             {% endif %}
 
             <button type="submit" class="btn btn-primary">
@@ -74,4 +96,157 @@
     <h2 class="h6 text-secondary text-uppercase mb-2">Resultados</h2>
     <div class="list-group" id="resultados"></div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+    const controles = "{{ controles }}";
+    const chk = document.getElementById('chk-redimensionar');
+    const campo = document.getElementById('campo-largura');
+    const widthInput = campo ? campo.querySelector('input[name="max_width"]') : null;
+    const quality = document.getElementById('input-quality');
+    const qualityValue = document.getElementById('quality-value');
+    const fileInput = document.querySelector('input[name="arquivos"]');
+
+    if (chk && campo && widthInput) {
+        chk.addEventListener('change', () => {
+            if (chk.checked) {
+                campo.classList.remove('d-none');
+                widthInput.disabled = false;
+            } else {
+                campo.classList.add('d-none');
+                widthInput.disabled = true;
+            }
+            agendarEstimativa();
+        });
+    }
+
+    if (quality && qualityValue) {
+        quality.addEventListener('input', () => {
+            qualityValue.textContent = quality.value;
+        });
+    }
+
+    function formatBytes(b) {
+        if (b < 1024) return b + ' B';
+        if (b < 1024 * 1024) return (b / 1024).toFixed(1) + ' KB';
+        return (b / (1024 * 1024)).toFixed(2) + ' MB';
+    }
+
+    function formatDuracao(s) {
+        const m = Math.floor(s / 60);
+        const sec = Math.round(s % 60);
+        return `${m}m ${sec}s`;
+    }
+
+    const wrap = document.getElementById('estimativa-wrap');
+    const elOriginal = document.getElementById('est-original');
+    const elNovo = document.getElementById('est-novo');
+    const elDelta = document.getElementById('est-delta');
+    const elDuracao = document.getElementById('est-duracao');
+    const elAviso = document.getElementById('est-aviso');
+
+    function mostrarResultadoEstimativa(file, data) {
+        wrap.classList.remove('d-none');
+        elOriginal.textContent = formatBytes(file.size);
+        if (!data.ok) {
+            elNovo.textContent = 'erro';
+            elDelta.textContent = '';
+            if (elAviso) elAviso.textContent = data.msg || '';
+            return;
+        }
+        elNovo.textContent = formatBytes(data.estimado);
+        const delta = ((data.estimado - data.original) / data.original) * 100;
+        const sinal = delta >= 0 ? '+' : '';
+        elDelta.textContent = `(${sinal}${delta.toFixed(1)}%)`;
+        elDelta.className = delta < 0 ? 'text-success' : 'text-danger';
+        if (elDuracao && data.duracao) elDuracao.textContent = formatDuracao(data.duracao);
+        if (elAviso) elAviso.textContent = data.aviso || '';
+    }
+
+    let debounceTimer = null;
+    let lastFile = null;
+
+    async function estimarWebp() {
+        if (!fileInput.files || !fileInput.files.length) return;
+        const file = fileInput.files[0];
+        lastFile = file;
+
+        const fd = new FormData();
+        fd.append('arquivo', file);
+        fd.append('quality', quality.value);
+        if (widthInput && !widthInput.disabled) {
+            fd.append('max_width', widthInput.value);
+        }
+
+        wrap.classList.remove('d-none');
+        elOriginal.textContent = formatBytes(file.size);
+        elNovo.textContent = 'calculando...';
+        elDelta.textContent = '';
+
+        try {
+            const resp = await fetch('/api/webp/estimar', { method: 'POST', body: fd });
+            const data = await resp.json();
+            if (lastFile !== file) return;
+            mostrarResultadoEstimativa(file, data);
+        } catch (err) {
+            elNovo.textContent = 'erro';
+        }
+    }
+
+    function agendarEstimativa() {
+        if (controles !== 'webp') return;
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(estimarWebp, 350);
+    }
+
+    if (controles === 'webp') {
+        fileInput.addEventListener('change', agendarEstimativa);
+        quality.addEventListener('input', agendarEstimativa);
+        if (widthInput) widthInput.addEventListener('input', agendarEstimativa);
+    }
+
+    const btnEstimarVideo = document.getElementById('btn-estimar-video');
+    if (btnEstimarVideo) {
+        btnEstimarVideo.addEventListener('click', async () => {
+            if (!fileInput.files || !fileInput.files.length) {
+                alert('Selecione um arquivo primeiro.');
+                return;
+            }
+            const file = fileInput.files[0];
+            const fd = new FormData();
+            fd.append('slug', '{{ tool.slug }}');
+            fd.append('arquivo', file);
+            fd.append('quality', quality.value);
+            if (widthInput && !widthInput.disabled) {
+                fd.append('max_width', widthInput.value);
+            }
+
+            wrap.classList.remove('d-none');
+            elOriginal.textContent = formatBytes(file.size);
+            elNovo.textContent = 'calculando...';
+            elDelta.textContent = '';
+            if (elDuracao) elDuracao.textContent = '-';
+            if (elAviso) elAviso.textContent = '';
+
+            btnEstimarVideo.disabled = true;
+            const textoOriginal = btnEstimarVideo.innerHTML;
+            btnEstimarVideo.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Estimando...';
+
+            try {
+                const resp = await fetch('/api/video/estimar', { method: 'POST', body: fd });
+                const data = await resp.json();
+                mostrarResultadoEstimativa(file, data);
+            } catch (err) {
+                elNovo.textContent = 'erro';
+                if (elAviso) elAviso.textContent = err.message;
+            } finally {
+                btnEstimarVideo.disabled = false;
+                btnEstimarVideo.innerHTML = textoOriginal;
+            }
+        });
+    }
+})();
+</script>
 {% endblock %}
