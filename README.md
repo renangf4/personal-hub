@@ -12,14 +12,25 @@ Hub privado e local com utilitarios pessoais, acessivel apenas pelo navegador em
 
 ## Requisitos
 
-- Windows
+- Windows, Linux ou macOS
 - Python 3.10+ no PATH
 
 ## Como usar
 
+### Windows
+
 1. Execute `start.bat` (primeira execucao cria o `venv` e instala dependencias).
 2. O navegador abre automaticamente em `http://localhost:7777`.
 3. Pra fechar, feche o terminal.
+
+### Linux / macOS
+
+```bash
+chmod +x start.sh
+./start.sh
+```
+
+Primeira execucao cria o `venv` e instala dependencias. Acesse `http://localhost:7777`.
 
 ## Caracteristicas
 
