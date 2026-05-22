@@ -14,7 +14,7 @@ from .cleanup import (
     OUTPUTS_DIR,
     UPLOADS_DIR,
     executar_limpeza,
-    iniciar_cleanup_em_background,
+    info_armazenamento,
 )
 from .tools import convert_mp4, convert_webm, convert_webp, unlock_pdf, wp_screenshot
 
@@ -48,7 +48,7 @@ TOOLS = {
     "convert-webp": {
         "slug": "convert-webp",
         "nome": "Converter para WebP",
-        "descricao": "Converte imagens para WebP (largura maxima configuravel).",
+        "descricao": "Converte imagens para WebP.",
         "icone": "bi-image",
         "aceita": "image/*",
         "controles": "webp",
@@ -57,7 +57,7 @@ TOOLS = {
     "unlock-pdf": {
         "slug": "unlock-pdf",
         "nome": "Desbloquear PDF",
-        "descricao": "Remove senha de PDFs usando lista pessoal cadastrada.",
+        "descricao": "Remove senha de PDFs usando lista persistente cadastrada.",
         "icone": "bi-file-earmark-lock",
         "aceita": ".pdf,application/pdf",
         "controles": "unlock",
@@ -80,7 +80,6 @@ def _startup() -> None:
     db.init_db()
     UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
     OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
-    iniciar_cleanup_em_background()
 
 
 def _criar_sessao() -> tuple[Path, Path, str]:
@@ -239,7 +238,12 @@ def api_remover_senha(senha_id: int):
     return {"ok": True, "senhas": db.listar_senhas()}
 
 
+@app.get("/api/limpar-info")
+def api_limpar_info():
+    return {"ok": True, **info_armazenamento()}
+
+
 @app.post("/api/limpar-agora")
 def api_limpar_agora():
-    removidos = executar_limpeza()
-    return {"ok": True, "removidos": removidos}
+    resultado = executar_limpeza()
+    return {"ok": True, **resultado}

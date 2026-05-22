@@ -35,8 +35,7 @@ Primeira execucao cria o `venv` e instala dependencias. Acesse `http://localhost
 ## Caracteristicas
 
 - **Porta 7777** (nao conflita com Apache/XAMPP, MySQL, Docker padrao).
-- **Auto-limpeza D+1**: arquivos com mais de 24h em `storage/uploads/` e `storage/outputs/` sao removidos automaticamente (varredura a cada 1h).
-- **Botao "Limpar cache"** no topo dispara a limpeza manual.
+- **Botao "Limpar cache"** no topo remove manualmente todos os arquivos em `storage/uploads/` e `storage/outputs/`, exibindo antes quantos arquivos e quanto espaco sera liberado.
 - **SQLite local** em `storage/hub.db` guarda apenas as senhas do desbloqueio de PDF.
 - **FFmpeg embutido** via `imageio-ffmpeg` (nao precisa instalar separadamente).
 
@@ -52,8 +51,8 @@ personal-hub/
   templates/           Jinja2 + Bootstrap
   static/              CSS e JS
   storage/
-    uploads/           Arquivos enviados (limpos em 24h)
-    outputs/           Arquivos gerados (limpos em 24h)
+    uploads/           Arquivos enviados (limpos via botao)
+    outputs/           Arquivos gerados (limpos via botao)
     hub.db             SQLite das senhas
   requirements.txt
   start.bat

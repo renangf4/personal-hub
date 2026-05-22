@@ -1,29 +1,43 @@
-import threading
-import time
 from pathlib import Path
 
 STORAGE_DIR = Path(__file__).resolve().parent.parent / "storage"
 UPLOADS_DIR = STORAGE_DIR / "uploads"
 OUTPUTS_DIR = STORAGE_DIR / "outputs"
 
-MAX_AGE_SECONDS = 24 * 60 * 60
-SCAN_INTERVAL_SECONDS = 60 * 60
 
-
-def _limpar_pasta(pasta: Path) -> int:
+def _iter_arquivos(pasta: Path):
     if not pasta.exists():
-        return 0
-    agora = time.time()
-    removidos = 0
+        return
     for item in pasta.rglob("*"):
-        if item.name == ".gitkeep":
+        if item.name == ".gitkeep" or not item.is_file():
             continue
+        yield item
+
+
+def info_armazenamento() -> dict:
+    arquivos = 0
+    bytes_total = 0
+    for pasta in (UPLOADS_DIR, OUTPUTS_DIR):
+        for item in _iter_arquivos(pasta):
+            try:
+                bytes_total += item.stat().st_size
+                arquivos += 1
+            except OSError:
+                continue
+    return {"arquivos": arquivos, "bytes": bytes_total}
+
+
+def _limpar_pasta(pasta: Path) -> tuple[int, int]:
+    if not pasta.exists():
+        return 0, 0
+    removidos = 0
+    bytes_liberados = 0
+    for item in list(_iter_arquivos(pasta)):
         try:
-            if item.is_file():
-                idade = agora - item.stat().st_mtime
-                if idade > MAX_AGE_SECONDS:
-                    item.unlink(missing_ok=True)
-                    removidos += 1
+            size = item.stat().st_size
+            item.unlink(missing_ok=True)
+            removidos += 1
+            bytes_liberados += size
         except OSError:
             continue
 
@@ -37,22 +51,14 @@ def _limpar_pasta(pasta: Path) -> int:
                 sub.rmdir()
         except OSError:
             continue
-    return removidos
+    return removidos, bytes_liberados
 
 
-def executar_limpeza() -> int:
-    return _limpar_pasta(UPLOADS_DIR) + _limpar_pasta(OUTPUTS_DIR)
-
-
-def _loop():
-    while True:
-        try:
-            executar_limpeza()
-        except Exception:
-            pass
-        time.sleep(SCAN_INTERVAL_SECONDS)
-
-
-def iniciar_cleanup_em_background() -> None:
-    t = threading.Thread(target=_loop, daemon=True, name="cleanup-d1")
-    t.start()
+def executar_limpeza() -> dict:
+    arquivos = 0
+    bytes_total = 0
+    for pasta in (UPLOADS_DIR, OUTPUTS_DIR):
+        a, b = _limpar_pasta(pasta)
+        arquivos += a
+        bytes_total += b
+    return {"arquivos": arquivos, "bytes": bytes_total}

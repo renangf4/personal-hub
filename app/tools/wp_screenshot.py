@@ -45,7 +45,11 @@ def processar(arquivos: list[Path], pasta_saida: Path) -> list[dict]:
                 img_final = img_redim.resize((LARGURA_FINAL, ALTURA_FINAL), Image.Resampling.LANCZOS)
                 modo = "achatado"
 
-            img_final = img_final.quantize(colors=256, method=2)
+            img_final = img_final.quantize(
+                colors=64,
+                method=Image.Quantize.MEDIANCUT,
+                dither=Image.Dither.FLOYDSTEINBERG,
+            )
             img_final.save(saida, "PNG", optimize=True, compress_level=9)
 
             resultados.append({

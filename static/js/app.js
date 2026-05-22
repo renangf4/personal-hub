@@ -32,6 +32,7 @@
                 wrap.classList.remove('d-none');
             } finally {
                 status.classList.add('d-none');
+                if (typeof window.atualizarLabelLixo === 'function') window.atualizarLabelLixo();
             }
         });
     }
@@ -68,19 +69,57 @@
         }[c]));
     }
 
+    function formatBytes(b) {
+        if (!b) return '0 B';
+        if (b < 1024) return b + ' B';
+        if (b < 1024 * 1024) return (b / 1024).toFixed(1) + ' KB';
+        return (b / (1024 * 1024)).toFixed(2) + ' MB';
+    }
+
     const btnLimpar = document.getElementById('btn-limpar-agora');
+    const labelLimpar = document.getElementById('btn-limpar-label');
+
+    async function atualizarLabelLixo() {
+        if (!labelLimpar) return;
+        try {
+            const resp = await fetch('/api/limpar-info');
+            const info = await resp.json();
+            if (info.arquivos > 0) {
+                labelLimpar.textContent = `Limpar Lixo (${formatBytes(info.bytes)})`;
+            } else {
+                labelLimpar.textContent = 'Limpar Lixo';
+            }
+        } catch (err) {
+            labelLimpar.textContent = 'Limpar Lixo';
+        }
+    }
+
+    window.atualizarLabelLixo = atualizarLabelLixo;
+    atualizarLabelLixo();
+
     if (btnLimpar) {
         btnLimpar.addEventListener('click', async () => {
-            if (!confirm('Remover agora todos os arquivos com mais de 24h?')) return;
             btnLimpar.disabled = true;
             try {
+                const infoResp = await fetch('/api/limpar-info');
+                const info = await infoResp.json();
+
+                if (!info.arquivos) {
+                    alert('Nada para limpar. Sem arquivos em cache.');
+                    return;
+                }
+
+                const msg = `Remover ${info.arquivos} arquivo(s) (${formatBytes(info.bytes)}) do cache?`;
+                if (!confirm(msg)) return;
+
                 const resp = await fetch('/api/limpar-agora', { method: 'POST' });
                 const data = await resp.json();
-                alert(`${data.removidos} arquivo(s) removido(s).`);
+                alert(`${data.arquivos} arquivo(s) removido(s) (${formatBytes(data.bytes)} liberados).`);
             } catch (err) {
                 alert('Erro ao limpar: ' + err.message);
             } finally {
                 btnLimpar.disabled = false;
+                atualizarLabelLixo();
             }
         });
     }
