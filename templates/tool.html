@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+
+{% block title %}{{ tool.nome }} - Personal Hub{% endblock %}
+
+{% block scripts %}
+<script>
+    (function () {
+        const chk = document.getElementById('chk-redimensionar');
+        if (!chk) return;
+        const campo = document.getElementById('campo-largura');
+        const input = campo.querySelector('input[name="max_width"]');
+        chk.addEventListener('change', () => {
+            if (chk.checked) {
+                campo.classList.remove('d-none');
+                input.disabled = false;
+            } else {
+                campo.classList.add('d-none');
+                input.disabled = true;
+            }
+        });
+    })();
+</script>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center mb-4">
+    <a href="/" class="btn btn-sm btn-outline-secondary me-3">
+        <i class="bi bi-arrow-left"></i>
+    </a>
+    <div>
+        <h1 class="h4 mb-0"><i class="bi {{ tool.icone }} me-2"></i>{{ tool.nome }}</h1>
+        <small class="text-secondary">{{ tool.descricao }}</small>
+    </div>
+</div>
+
+<div class="card mb-4">
+    <div class="card-body">
+        <form id="form-processar" data-slug="{{ tool.slug }}">
+            <div class="mb-3">
+                <label class="form-label">Arquivos</label>
+                <input class="form-control" type="file" name="arquivos" accept="{{ tool.aceita }}" multiple required>
+            </div>
+
+            {% if mostrar_largura %}
+            <div class="mb-3">
+                <div class="form-check mb-2">
+                    <input class="form-check-input" type="checkbox" id="chk-redimensionar">
+                    <label class="form-check-label" for="chk-redimensionar">
+                        Redimensionar (largura maxima)
+                    </label>
+                </div>
+                <div id="campo-largura" class="d-none" style="max-width: 240px;">
+                    <input class="form-control" type="number" name="max_width" value="500" min="1" disabled>
+                    <small class="text-secondary">Mantem proporcao. Imagens menores que esse valor nao sao alteradas.</small>
+                </div>
+            </div>
+            {% endif %}
+
+            <button type="submit" class="btn btn-primary">
+                <i class="bi bi-play-fill"></i> Processar
+            </button>
+        </form>
+    </div>
+</div>
+
+<div id="status" class="d-none alert alert-info">
+    <div class="d-flex align-items-center">
+        <div class="spinner-border spinner-border-sm me-2" role="status"></div>
+        <span>Processando, aguarde...</span>
+    </div>
+</div>
+
+<div id="resultados-wrap" class="d-none">
+    <h2 class="h6 text-secondary text-uppercase mb-2">Resultados</h2>
+    <div class="list-group" id="resultados"></div>
+</div>
+{% endblock %}

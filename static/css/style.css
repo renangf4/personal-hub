@@ -1,0 +1,18 @@
+body {
+    min-height: 100vh;
+}
+
+.tool-card {
+    transition: transform .12s ease, border-color .12s ease;
+    border: 1px solid var(--bs-border-color);
+}
+
+.tool-card:hover {
+    transform: translateY(-2px);
+    border-color: var(--bs-primary);
+}
+
+.list-group-item .resultado-msg {
+    font-size: .85rem;
+    color: var(--bs-secondary-color);
+}

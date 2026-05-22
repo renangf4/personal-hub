@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+
+{% block title %}{{ tool.nome }} - Personal Hub{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center mb-4">
+    <a href="/" class="btn btn-sm btn-outline-secondary me-3">
+        <i class="bi bi-arrow-left"></i>
+    </a>
+    <div>
+        <h1 class="h4 mb-0"><i class="bi {{ tool.icone }} me-2"></i>{{ tool.nome }}</h1>
+        <small class="text-secondary">{{ tool.descricao }}</small>
+    </div>
+</div>
+
+<div class="row g-4">
+    <div class="col-12 col-lg-7">
+        <div class="card mb-4">
+            <div class="card-body">
+                <h2 class="h6 text-uppercase text-secondary mb-3">Desbloquear PDFs</h2>
+                <form id="form-processar" data-slug="{{ tool.slug }}">
+                    <div class="mb-3">
+                        <label class="form-label">Arquivos PDF</label>
+                        <input class="form-control" type="file" name="arquivos" accept=".pdf,application/pdf" multiple required>
+                    </div>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-unlock"></i> Desbloquear
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <div id="status" class="d-none alert alert-info">
+            <div class="d-flex align-items-center">
+                <div class="spinner-border spinner-border-sm me-2" role="status"></div>
+                <span>Processando, aguarde...</span>
+            </div>
+        </div>
+
+        <div id="resultados-wrap" class="d-none">
+            <h2 class="h6 text-secondary text-uppercase mb-2">Resultados</h2>
+            <div class="list-group" id="resultados"></div>
+        </div>
+    </div>
+
+    <div class="col-12 col-lg-5">
+        <div class="card">
+            <div class="card-body">
+                <h2 class="h6 text-uppercase text-secondary mb-3">Senhas salvas</h2>
+
+                <form id="form-add-senha" class="mb-3">
+                    <div class="input-group">
+                        <input class="form-control" type="text" name="senha" placeholder="Nova senha" required>
+                        <button class="btn btn-outline-primary" type="submit">
+                            <i class="bi bi-plus-lg"></i>
+                        </button>
+                    </div>
+                    <small class="text-secondary">As senhas sao persistidas em SQLite local.</small>
+                </form>
+
+                <ul class="list-group" id="lista-senhas">
+                    {% for s in senhas %}
+                    <li class="list-group-item d-flex justify-content-between align-items-center" data-id="{{ s.id }}">
+                        <code>{{ s.senha }}</code>
+                        <button class="btn btn-sm btn-outline-danger btn-remover-senha" data-id="{{ s.id }}" title="Remover">
+                            <i class="bi bi-x-lg"></i>
+                        </button>
+                    </li>
+                    {% else %}
+                    <li class="list-group-item text-secondary text-center">Nenhuma senha cadastrada</li>
+                    {% endfor %}
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/senhas.js"></script>
+{% endblock %}

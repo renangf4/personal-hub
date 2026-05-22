@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="mb-4">
+    <h1 class="h3 mb-1">Bem-vindo</h1>
+    <p class="text-secondary mb-0">Escolha uma ferramenta para comecar.</p>
+</div>
+
+<div class="row g-3">
+    {% for tool in tools %}
+    <div class="col-12 col-sm-6 col-lg-4">
+        <a href="/tool/{{ tool.slug }}" class="text-decoration-none">
+            <div class="card h-100 tool-card">
+                <div class="card-body">
+                    <div class="d-flex align-items-center mb-2">
+                        <i class="bi {{ tool.icone }} fs-3 me-3 text-primary"></i>
+                        <h5 class="card-title mb-0">{{ tool.nome }}</h5>
+                    </div>
+                    <p class="card-text text-secondary small mb-0">{{ tool.descricao }}</p>
+                </div>
+            </div>
+        </a>
+    </div>
+    {% endfor %}
+</div>
+{% endblock %}
