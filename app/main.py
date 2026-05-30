@@ -1,11 +1,12 @@
+import json
 import shutil
 import time
 import uuid
 from pathlib import Path
 from typing import Literal
 
-from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
+from fastapi import Body, FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -16,7 +17,7 @@ from .cleanup import (
     executar_limpeza,
     info_armazenamento,
 )
-from .tools import convert_mp4, convert_webm, convert_webp, unlock_pdf, wp_screenshot
+from .tools import ai_chat, convert_mp4, convert_webm, convert_webp, unlock_pdf, wp_screenshot
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 TEMPLATES_DIR = BASE_DIR / "templates"
@@ -72,6 +73,15 @@ TOOLS = {
         "controles": "none",
         "modulo": wp_screenshot,
     },
+    "ai-chat": {
+        "slug": "ai-chat",
+        "nome": "Assistente de IA Local",
+        "descricao": "Chat local com Ollama (qwen2.5-coder) para duvidas de codigo e arquitetura.",
+        "icone": "bi-robot",
+        "aceita": "",
+        "controles": "ai",
+        "modulo": ai_chat,
+    },
 }
 
 
@@ -124,6 +134,17 @@ def tool_page(request: Request, slug: str):
             {"request": request, "tool": tool, "senhas": db.listar_senhas()},
         )
 
+    if slug == "ai-chat":
+        return templates.TemplateResponse(
+            "ai_chat.html",
+            {
+                "request": request,
+                "tool": tool,
+                "modelo": ai_chat.MODELO_PADRAO,
+                "chats": db.listar_chats(),
+            },
+        )
+
     return templates.TemplateResponse(
         "tool.html",
         {"request": request, "tool": tool, "controles": tool.get("controles", "none")},
@@ -140,6 +161,9 @@ async def processar(
     tool = TOOLS.get(slug)
     if not tool:
         raise HTTPException(status_code=404)
+
+    if slug == "ai-chat":
+        raise HTTPException(status_code=400, detail="Use /api/ai/* para o assistente")
 
     upload_dir, output_dir, sessao_id = _criar_sessao()
     entradas = _salvar_uploads(arquivos, upload_dir)
@@ -247,3 +271,144 @@ def api_limpar_info():
 def api_limpar_agora():
     resultado = executar_limpeza()
     return {"ok": True, **resultado}
+
+
+def _modelo_permitido(modelo: str | None) -> str:
+    if not modelo:
+        return ai_chat.MODELO_PADRAO
+    permitidos = {p["slug"] for p in ai_chat.MODELOS_PRESET}
+    if modelo not in permitidos:
+        raise HTTPException(status_code=400, detail="Modelo nao permitido")
+    return modelo
+
+
+@app.get("/api/ai/status")
+async def api_ai_status():
+    info = await ai_chat.verificar_status(ai_chat.MODELO_PADRAO)
+    return {"ok": True, **info}
+
+
+@app.post("/api/ai/pull")
+async def api_ai_pull(payload: dict = Body(default_factory=dict)):
+    modelo = _modelo_permitido(payload.get("modelo"))
+    return StreamingResponse(
+        ai_chat.stream_pull(modelo),
+        media_type="application/x-ndjson",
+    )
+
+
+@app.post("/api/ai/instalar-ollama")
+async def api_ai_instalar_ollama():
+    return StreamingResponse(
+        ai_chat.stream_install_ollama(),
+        media_type="application/x-ndjson",
+    )
+
+
+@app.post("/api/ai/iniciar-ollama")
+def api_ai_iniciar_ollama():
+    resultado = ai_chat.iniciar_servico_ollama()
+    status_code = 200 if resultado.get("ok") else 400
+    return JSONResponse(status_code=status_code, content=resultado)
+
+
+@app.get("/api/ai/chats")
+def api_ai_chats_listar():
+    return {"ok": True, "chats": db.listar_chats()}
+
+
+@app.post("/api/ai/chats")
+def api_ai_chats_criar(payload: dict = Body(default_factory=dict)):
+    titulo = (payload.get("titulo") or "Nova conversa").strip() or "Nova conversa"
+    chat = db.criar_chat(titulo)
+    return {"ok": True, "chat": chat}
+
+
+@app.get("/api/ai/chats/{chat_id}")
+def api_ai_chat_detalhe(chat_id: int):
+    chat = db.obter_chat(chat_id)
+    if not chat:
+        raise HTTPException(status_code=404)
+    return {
+        "ok": True,
+        "chat": chat,
+        "mensagens": db.listar_mensagens(chat_id),
+    }
+
+
+@app.patch("/api/ai/chats/{chat_id}")
+def api_ai_chat_renomear(chat_id: int, payload: dict = Body(...)):
+    titulo = (payload.get("titulo") or "").strip()
+    if not titulo:
+        raise HTTPException(status_code=400, detail="Titulo vazio")
+    if not db.renomear_chat(chat_id, titulo):
+        raise HTTPException(status_code=404)
+    return {"ok": True, "chat": db.obter_chat(chat_id)}
+
+
+@app.delete("/api/ai/chats/{chat_id}")
+def api_ai_chat_excluir(chat_id: int):
+    db.excluir_chat(chat_id)
+    return {"ok": True}
+
+
+@app.post("/api/ai/chats/{chat_id}/mensagens")
+async def api_ai_mensagem(chat_id: int, payload: dict = Body(...)):
+    conteudo = (payload.get("conteudo") or "").strip()
+    if not conteudo:
+        raise HTTPException(status_code=400, detail="Mensagem vazia")
+
+    modelo = _modelo_permitido(payload.get("modelo"))
+
+    chat = db.obter_chat(chat_id)
+    if not chat:
+        raise HTTPException(status_code=404)
+
+    msg_user = db.adicionar_mensagem(chat_id, "user", conteudo)
+
+    if chat["titulo"] == "Nova conversa":
+        novo_titulo = conteudo.strip().splitlines()[0][:60]
+        if novo_titulo:
+            db.renomear_chat(chat_id, novo_titulo)
+
+    historico = [
+        {"role": m["role"], "content": m["conteudo"]}
+        for m in db.listar_mensagens(chat_id)
+        if m["role"] in ("user", "assistant")
+    ]
+
+    async def gerar():
+        yield (json.dumps({"tipo": "user_msg", "mensagem": msg_user}) + "\n").encode("utf-8")
+
+        partes: list[str] = []
+        async for chunk in ai_chat.stream_chat(modelo, historico):
+            if chunk.get("erro"):
+                yield (
+                    json.dumps({"tipo": "erro", "msg": chunk.get("msg", "Erro desconhecido")}) + "\n"
+                ).encode("utf-8")
+                return
+            pedaco = chunk.get("message", {}).get("content", "")
+            if pedaco:
+                partes.append(pedaco)
+                yield (json.dumps({"tipo": "delta", "conteudo": pedaco}) + "\n").encode("utf-8")
+            if chunk.get("done"):
+                resposta = "".join(partes).strip()
+                total_ns = chunk.get("total_duration") or 0
+                eval_count = chunk.get("eval_count") or 0
+                eval_ns = chunk.get("eval_duration") or 0
+                load_ns = chunk.get("load_duration") or 0
+                metricas = {
+                    "total_s": round(total_ns / 1e9, 2) if total_ns else None,
+                    "load_s": round(load_ns / 1e9, 2) if load_ns else None,
+                    "tokens": eval_count,
+                    "tokens_por_s": round(eval_count / (eval_ns / 1e9), 1) if eval_ns else None,
+                }
+                msg_ai = None
+                if resposta:
+                    msg_ai = db.adicionar_mensagem(chat_id, "assistant", resposta)
+                yield (
+                    json.dumps({"tipo": "fim", "mensagem": msg_ai, "metricas": metricas}) + "\n"
+                ).encode("utf-8")
+                return
+
+    return StreamingResponse(gerar(), media_type="application/x-ndjson")
