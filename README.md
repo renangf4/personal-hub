@@ -6,17 +6,19 @@ Hub privado e local com utilitarios pessoais, acessivel apenas pelo navegador em
 
 Instale sob demanda pela **Loja** (`/loja`):
 
-- Video — MP4 (H.264) e WebM (VP9)
-- Imagem — WebP e Screenshot WordPress
-- Desbloquear PDF — senhas em SQLite
-- Assistente de IA Local — chat com Ollama
-- DNS e Whois — lookup DNS, Whois e info de IP
+- **Video** — MP4, WebM, GIF, MKV, MOV (FFmpeg embutido)
+- **Imagem** — WebP, PNG, JPEG, GIF, BMP, TIFF
+- **Screenshot WordPress** — padroniza em 1200x900 PNG
+- **Desbloquear PDF** — senhas salvas, senha unica, wordlist ou PIN numerico
+- **Assistente de IA Local** — chat com Ollama; anexos de arquivo/PDF; carteiras por foco
+- **DNS e Whois** — DNS, Whois, IP/geo e Shodan (API key opcional)
 
 ## Requisitos
 
 - Windows, Linux ou macOS
 - Python 3.10+ no PATH
-- [Ollama](https://ollama.com) (opcional; necessario apenas para o Assistente de IA)
+- [Ollama](https://ollama.com) (opcional; so para o Assistente de IA)
+- Conta [Shodan](https://account.shodan.io/) (opcional; so se for usar a consulta Shodan)
 
 ## Como usar
 
@@ -45,10 +47,11 @@ chmod +x start.sh
 
 - **Porta 7777** (nao conflita com Apache/XAMPP, MySQL, Docker padrao).
 - **Loja** instala e remove pacotes opcionais sem sujar a raiz do projeto.
-- **Botao "Limpar Tudo"** remove arquivos em `storage/uploads/` e `storage/outputs/`.
-- **SQLite local** em `storage/hub.db` (senhas PDF e chat de IA).
-- **FFmpeg embutido** via `imageio-ffmpeg` (quando o extra Video estiver instalado).
+- **Limpeza por ferramenta** e botao global de limpar em `storage/`.
+- **SQLite local** em `storage/hub.db` (senhas PDF, chats IA, settings como key Shodan).
+- **FFmpeg embutido** via `imageio-ffmpeg` (extra Video).
 - **Ollama** em `localhost:11434` para o Assistente de IA.
+- Home com ordem arrastavel das ferramentas.
 
 ## Estrutura
 
@@ -65,6 +68,7 @@ personal-hub/
   templates/           Jinja2 + Bootstrap
   static/              CSS e JS
   storage/
+  .cursor/rules/       Regras do Cursor no projeto
   requirements.txt     Nucleo (sempre)
   start.bat
   start.sh
@@ -75,3 +79,4 @@ personal-hub/
 - Conversoes de video sao sincronas: a request espera o ffmpeg terminar.
 - Toda a comunicacao e `127.0.0.1`; nada e exposto na rede.
 - O Assistente de IA exige Ollama rodando localmente; a UI ajuda a instalar e baixar modelos.
+- Consultas de rede (Whois/geo/Shodan) usam seu IP publico — a tela avisa qual IP esta saindo.

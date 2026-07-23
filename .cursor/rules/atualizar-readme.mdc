@@ -1,0 +1,21 @@
+---
+description: Atualizar README apos mudancas relevantes no projeto
+alwaysApply: true
+---
+
+# README
+
+Apos alteracoes que mudem o comportamento, as ferramentas, a Loja, a instalacao ou a estrutura do projeto, atualize o `README.md` no mesmo trabalho — se necessario.
+
+Atualize quando:
+- Nova ferramenta / extra na Loja
+- Formatos, modos ou deps relevantes mudarem
+- Fluxo de start / requisitos mudarem
+- Estrutura de pastas ou caracteristicas listadas ficarem desatualizadas
+
+Nao precisa atualizar por:
+- Refactor interno sem impacto pro usuario
+- Ajuste so de CSS/UI menor
+- Fix pontual sem mudar o que o README descreve
+
+Mantenha o README curto, em portugues, alinhado ao que realmente existe no codigo (`app/extras.py`, tools, scripts).
