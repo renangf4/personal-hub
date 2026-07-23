@@ -15,7 +15,23 @@
 
 <div class="card mb-4">
     <div class="card-body">
-        <form id="form-processar" data-slug="{{ tool.slug }}">
+        <form id="form-processar" data-slug="{% if categoria %}{% else %}{{ tool.slug }}{% endif %}">
+            {% if categoria %}
+                {% if categoria.formatos|length > 1 %}
+                <div class="mb-3">
+                    <label class="form-label d-block">Formato de saida</label>
+                    <div class="btn-group" role="group" aria-label="Formato de saida">
+                        {% for f in categoria.formatos %}
+                        <input type="radio" class="btn-check" name="formato" id="fmt-{{ f.slug }}" value="{{ f.slug }}" autocomplete="off" {% if f.padrao %}checked{% endif %}>
+                        <label class="btn btn-outline-primary" for="fmt-{{ f.slug }}">{{ f.label }}</label>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% else %}
+                <input type="hidden" name="formato" value="{{ categoria.formatos[0].slug }}">
+                {% endif %}
+            {% endif %}
+
             <div class="mb-3">
                 <label class="form-label">Arquivos</label>
                 <input class="form-control" type="file" name="arquivos" accept="{{ tool.aceita }}" multiple required>
@@ -216,7 +232,9 @@
             }
             const file = fileInput.files[0];
             const fd = new FormData();
-            fd.append('slug', '{{ tool.slug }}');
+            const form = document.getElementById('form-processar');
+            const slugAtual = form.dataset.slug || (form.elements['formato'] && form.elements['formato'].value) || '{{ tool.slug }}';
+            fd.append('slug', slugAtual);
             fd.append('arquivo', file);
             fd.append('quality', quality.value);
             if (widthInput && !widthInput.disabled) {

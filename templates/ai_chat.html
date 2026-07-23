@@ -18,6 +18,11 @@
 
 <div id="ai-gate" class="card mb-4 d-none">
     <div class="card-body py-4">
+        <div class="d-flex justify-content-end mb-2">
+            <button id="ai-btn-voltar" class="btn btn-sm btn-outline-secondary d-none" type="button">
+                <i class="bi bi-arrow-left me-1"></i> Voltar ao chat
+            </button>
+        </div>
         <div class="text-center mb-4">
             <i class="bi bi-shield-lock display-5 text-secondary"></i>
             <h2 class="h5 mt-2 mb-1" id="ai-gate-titulo">Assistente bloqueado</h2>
@@ -65,8 +70,18 @@
         <header class="ai-chat__header">
             <div class="flex-grow-1 min-w-0">
                 <div class="ai-chat__titulo" id="ai-chat-titulo">Selecione uma conversa</div>
-                <small class="text-secondary">
-                    Modelo: <select id="ai-modelo-select" class="form-select form-select-sm ai-chat__modelo"></select>
+                <small class="text-secondary d-flex flex-wrap align-items-center gap-2 mt-1">
+                    <span>
+                        Modelo:
+                        <select id="ai-modelo-select" class="form-select form-select-sm ai-chat__modelo"></select>
+                    </span>
+                    <span>
+                        Contexto:
+                        <select id="ai-ctx-select" class="form-select form-select-sm ai-chat__modelo" title="Context length (num_ctx)"></select>
+                        <button type="button" id="ai-btn-ctx-info" class="btn btn-link btn-sm p-0 align-baseline" title="O que e context length?">
+                            <i class="bi bi-info-circle"></i>
+                        </button>
+                    </span>
                 </small>
             </div>
             <div class="d-flex gap-2">
@@ -81,6 +96,29 @@
                 </button>
             </div>
         </header>
+
+        <div id="ai-ctx-info" class="ai-ctx-info d-none">
+            <div class="ai-ctx-info__inner">
+                <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
+                    <strong><i class="bi bi-memory me-1"></i> Context length</strong>
+                    <button type="button" id="ai-btn-ctx-fechar" class="btn-close btn-close-white btn-sm" aria-label="Fechar"></button>
+                </div>
+                <p class="small mb-2">
+                    Quantidade maxima de tokens que o modelo consegue &quot;lembrar&quot; na conversa
+                    (historico + codigo + logs). Mais contexto = mais memoria RAM/VRAM e resposta mais lenta.
+                </p>
+                <ul class="small mb-2 ps-3">
+                    <li><strong>4k–8k</strong> — perguntas curtas</li>
+                    <li><strong>16k–32k</strong> — codigo / pentest do dia a dia (recomendado: 32k)</li>
+                    <li><strong>64k+</strong> — logs grandes ou varios arquivos</li>
+                    <li><strong>128k</strong> — so se tiver RAM sobrando</li>
+                </ul>
+                <p class="small text-secondary mb-0">
+                    Regra pratica: comece em <strong>32k</strong>. Se ficar lento ou travar, diminua.
+                    Se colar arquivos grandes e o modelo &quot;esquecer&quot; o inicio, aumente.
+                </p>
+            </div>
+        </div>
 
         <div class="ai-chat__mensagens" id="ai-mensagens">
             <div class="ai-chat__empty text-secondary text-center py-5">

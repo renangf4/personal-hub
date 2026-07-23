@@ -7,7 +7,7 @@
     if (form) {
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
-            const slug = form.dataset.slug;
+            const slug = form.dataset.slug || (form.elements['formato'] && form.elements['formato'].value);
             const formData = new FormData(form);
 
             status.classList.remove('d-none');

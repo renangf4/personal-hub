@@ -76,13 +76,49 @@ TOOLS = {
     "ai-chat": {
         "slug": "ai-chat",
         "nome": "Assistente de IA Local",
-        "descricao": "Chat local com Ollama (qwen2.5-coder) para duvidas de codigo e arquitetura.",
+        "descricao": "Chat local com Ollama — carteira por foco (codigo, seguranca, geral...).",
         "icone": "bi-robot",
         "aceita": "",
         "controles": "ai",
         "modulo": ai_chat,
     },
 }
+
+CATEGORIAS = {
+    "video": {
+        "slug": "video",
+        "nome": "Video",
+        "descricao": "Conversao de videos para MP4 ou WebM.",
+        "icone": "bi-camera-video",
+        "aceita": "video/*,.mkv,.mov,.avi,.webm",
+        "controles": "video",
+        "formatos": [
+            {"slug": "convert-mp4", "label": "MP4 (H.264)", "padrao": True},
+            {"slug": "convert-webm", "label": "WebM (VP9)", "padrao": False},
+        ],
+    },
+    "imagem": {
+        "slug": "imagem",
+        "nome": "Imagem",
+        "descricao": "Conversao de imagens para WebP.",
+        "icone": "bi-image",
+        "aceita": "image/*",
+        "controles": "webp",
+        "formatos": [
+            {"slug": "convert-webp", "label": "WebP", "padrao": True},
+        ],
+    },
+}
+
+
+def _home_itens() -> list[dict]:
+    return [
+        {**CATEGORIAS["video"], "href": "/categoria/video"},
+        {**CATEGORIAS["imagem"], "href": "/categoria/imagem"},
+        {**TOOLS["wp-screenshot"], "href": "/tool/wp-screenshot"},
+        {**TOOLS["unlock-pdf"], "href": "/tool/unlock-pdf"},
+        {**TOOLS["ai-chat"], "href": "/tool/ai-chat"},
+    ]
 
 
 @app.on_event("startup")
@@ -118,7 +154,23 @@ def _salvar_uploads(arquivos: list[UploadFile], destino: Path) -> list[Path]:
 def index(request: Request):
     return templates.TemplateResponse(
         "index.html",
-        {"request": request, "tools": list(TOOLS.values())},
+        {"request": request, "tools": _home_itens()},
+    )
+
+
+@app.get("/categoria/{slug}", response_class=HTMLResponse)
+def categoria_page(request: Request, slug: str):
+    cat = CATEGORIAS.get(slug)
+    if not cat:
+        raise HTTPException(status_code=404)
+    return templates.TemplateResponse(
+        "tool.html",
+        {
+            "request": request,
+            "tool": cat,
+            "controles": cat["controles"],
+            "categoria": cat,
+        },
     )
 
 
@@ -282,6 +334,16 @@ def _modelo_permitido(modelo: str | None) -> str:
     return modelo
 
 
+def _contexto_permitido(num_ctx) -> int:
+    try:
+        valor = int(num_ctx) if num_ctx is not None else ai_chat.CONTEXT_PADRAO
+    except (TypeError, ValueError):
+        return ai_chat.CONTEXT_PADRAO
+    if valor not in ai_chat.CONTEXTOS_PERMITIDOS:
+        raise HTTPException(status_code=400, detail="Context length invalido")
+    return valor
+
+
 @app.get("/api/ai/status")
 async def api_ai_status():
     info = await ai_chat.verificar_status(ai_chat.MODELO_PADRAO)
@@ -295,6 +357,14 @@ async def api_ai_pull(payload: dict = Body(default_factory=dict)):
         ai_chat.stream_pull(modelo),
         media_type="application/x-ndjson",
     )
+
+
+@app.post("/api/ai/delete")
+async def api_ai_delete(payload: dict = Body(default_factory=dict)):
+    modelo = _modelo_permitido(payload.get("modelo"))
+    resultado = await ai_chat.deletar_modelo(modelo)
+    status_code = 200 if resultado.get("ok") else 400
+    return JSONResponse(status_code=status_code, content=resultado)
 
 
 @app.post("/api/ai/instalar-ollama")
@@ -359,6 +429,7 @@ async def api_ai_mensagem(chat_id: int, payload: dict = Body(...)):
         raise HTTPException(status_code=400, detail="Mensagem vazia")
 
     modelo = _modelo_permitido(payload.get("modelo"))
+    num_ctx = _contexto_permitido(payload.get("num_ctx"))
 
     chat = db.obter_chat(chat_id)
     if not chat:
@@ -381,7 +452,7 @@ async def api_ai_mensagem(chat_id: int, payload: dict = Body(...)):
         yield (json.dumps({"tipo": "user_msg", "mensagem": msg_user}) + "\n").encode("utf-8")
 
         partes: list[str] = []
-        async for chunk in ai_chat.stream_chat(modelo, historico):
+        async for chunk in ai_chat.stream_chat(modelo, historico, num_ctx=num_ctx):
             if chunk.get("erro"):
                 yield (
                     json.dumps({"tipo": "erro", "msg": chunk.get("msg", "Erro desconhecido")}) + "\n"

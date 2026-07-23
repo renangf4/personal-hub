@@ -7,6 +7,7 @@
     const presetsWrap = document.getElementById('ai-presets');
     const btnInstalar = document.getElementById('ai-btn-instalar');
     const btnIniciar = document.getElementById('ai-btn-iniciar');
+    const btnVoltar = document.getElementById('ai-btn-voltar');
     const pullWrap = document.getElementById('ai-pull-wrap');
     const pullBar = document.getElementById('ai-pull-bar');
     const pullPercent = document.getElementById('ai-pull-percent');
@@ -18,6 +19,10 @@
     const btnNovoChat = document.getElementById('ai-novo-chat');
     const tituloEl = document.getElementById('ai-chat-titulo');
     const modeloSelect = document.getElementById('ai-modelo-select');
+    const ctxSelect = document.getElementById('ai-ctx-select');
+    const btnCtxInfo = document.getElementById('ai-btn-ctx-info');
+    const ctxInfo = document.getElementById('ai-ctx-info');
+    const btnCtxFechar = document.getElementById('ai-btn-ctx-fechar');
     const btnGerenciar = document.getElementById('ai-btn-gerenciar');
     const btnRenomear = document.getElementById('ai-btn-renomear');
     const btnExcluir = document.getElementById('ai-btn-excluir');
@@ -27,9 +32,12 @@
     const btnEnviar = document.getElementById('ai-btn-enviar');
 
     const LS_MODELO = 'ai_chat_modelo';
+    const LS_CTX = 'ai_chat_num_ctx';
     let chatAtual = null;
     let enviando = false;
     let ultimoStatus = null;
+    let modoGerenciar = false;
+    const CTX_PADRAO = 32768;
 
     marked.setOptions({
         breaks: true,
@@ -117,8 +125,18 @@
             }
 
             setStatus('ok', 'Pronto');
+            if (modoGerenciar) {
+                mostrarGate('Gerenciar modelos',
+                    'Baixe novos modelos ou remova os que nao usa mais para liberar espaco.',
+                    { presets: true, presetsData: data.presets, gerenciar: true, voltar: true }
+                );
+                atualizarSeletorModelo(data.presets);
+                atualizarSeletorContexto(data.contextos, data.contexto_padrao);
+                return true;
+            }
             esconderGate();
             atualizarSeletorModelo(data.presets);
+            atualizarSeletorContexto(data.contextos, data.contexto_padrao);
             return true;
         } catch (err) {
             setStatus('erro', 'Erro ao verificar');
@@ -132,10 +150,12 @@
         chat.classList.add('d-none');
         gateTitulo.textContent = titulo;
         gateMsg.innerHTML = msgHtml;
+        modoGerenciar = !!opcoes.gerenciar;
         btnInstalar.classList.toggle('d-none', !opcoes.instalar);
         btnIniciar.classList.toggle('d-none', !opcoes.iniciar);
+        if (btnVoltar) btnVoltar.classList.toggle('d-none', !opcoes.voltar);
         if (opcoes.presets) {
-            renderPresets(opcoes.presetsData || []);
+            renderPresets(opcoes.presetsData || [], !!opcoes.gerenciar);
             presetsWrap.classList.remove('d-none');
         } else {
             presetsWrap.classList.add('d-none');
@@ -143,26 +163,61 @@
         }
     }
 
-    function renderPresets(presets) {
-        presetsWrap.innerHTML = presets.map((p) => `
-            <div class="col-12 col-md-4">
-                <div class="ai-preset ${p.baixado ? 'ai-preset--baixado' : ''}">
-                    <div class="ai-preset__head">
-                        <i class="bi ${p.icone} fs-4 text-primary"></i>
-                        <span class="ai-preset__nome">${escapeHtml(p.nome)}</span>
-                        <span class="ai-preset__tamanho">${escapeHtml(p.tamanho)}</span>
+    function renderPresets(presets, gerenciar) {
+        const focos = (ultimoStatus && ultimoStatus.focos) || [];
+        const ordem = focos.length
+            ? focos.map(f => f.id)
+            : [...new Set(presets.map(p => p.foco || 'geral'))];
+
+        const mapaFoco = {};
+        focos.forEach(f => { mapaFoco[f.id] = f; });
+
+        let html = '';
+        for (const focoId of ordem) {
+            const grupo = presets.filter(p => (p.foco || 'geral') === focoId);
+            if (!grupo.length) continue;
+            const meta = mapaFoco[focoId] || { nome: focoId, icone: 'bi-collection', descricao: '' };
+            html += `
+                <div class="col-12">
+                    <div class="ai-foco">
+                        <div class="ai-foco__head">
+                            <i class="bi ${escapeHtml(meta.icone)}"></i>
+                            <div>
+                                <div class="ai-foco__nome">${escapeHtml(meta.nome)}</div>
+                                <div class="ai-foco__desc">${escapeHtml(meta.descricao || '')}</div>
+                            </div>
+                        </div>
+                        <div class="row g-3">
+                            ${grupo.map((p) => `
+                                <div class="col-12 col-sm-6 col-lg-4">
+                                    <div class="ai-preset ${p.baixado ? 'ai-preset--baixado' : ''}">
+                                        <div class="ai-preset__head">
+                                            <i class="bi ${p.icone} fs-4 text-primary"></i>
+                                            <span class="ai-preset__nome">${escapeHtml(p.nome)}</span>
+                                            <span class="ai-preset__tamanho">${escapeHtml(p.tamanho)}</span>
+                                        </div>
+                                        <div class="ai-preset__desc">${escapeHtml(p.descricao)}</div>
+                                        <div class="ai-preset__slug">${escapeHtml(p.slug)}</div>
+                                        ${p.baixado
+                                            ? `<div class="ai-preset__acoes">
+                                                   <span class="badge text-bg-success"><i class="bi bi-check2"></i> Baixado</span>
+                                                   ${gerenciar ? `<button class="btn btn-sm btn-outline-danger" data-deletar="${escapeHtml(p.slug)}" title="Remover modelo">
+                                                       <i class="bi bi-trash3"></i> Remover
+                                                   </button>` : ''}
+                                               </div>`
+                                            : `<button class="btn btn-sm btn-primary w-100" data-baixar="${escapeHtml(p.slug)}">
+                                                   <i class="bi bi-download me-1"></i> Baixar
+                                               </button>`
+                                        }
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
                     </div>
-                    <div class="ai-preset__desc">${escapeHtml(p.descricao)}</div>
-                    <div class="ai-preset__slug">${escapeHtml(p.slug)}</div>
-                    ${p.baixado
-                        ? `<span class="badge text-bg-success ai-preset__badge"><i class="bi bi-check2"></i> Baixado</span>`
-                        : `<button class="btn btn-sm btn-primary w-100" data-baixar="${escapeHtml(p.slug)}">
-                               <i class="bi bi-download me-1"></i> Baixar
-                           </button>`
-                    }
                 </div>
-            </div>
-        `).join('');
+            `;
+        }
+        presetsWrap.innerHTML = html;
     }
 
     function atualizarSeletorModelo(presets) {
@@ -171,13 +226,46 @@
             modeloSelect.innerHTML = '';
             return;
         }
+        const focos = (ultimoStatus && ultimoStatus.focos) || [];
+        const ordem = focos.length
+            ? focos.map(f => f.id)
+            : [...new Set(baixados.map(p => p.foco || 'geral'))];
+        const mapaFoco = {};
+        focos.forEach(f => { mapaFoco[f.id] = f; });
+
         const salvo = localStorage.getItem(LS_MODELO);
-        modeloSelect.innerHTML = baixados.map(p =>
-            `<option value="${escapeHtml(p.slug)}">${escapeHtml(p.nome)} (${escapeHtml(p.slug)})</option>`
-        ).join('');
+        let html = '';
+        for (const focoId of ordem) {
+            const grupo = baixados.filter(p => (p.foco || 'geral') === focoId);
+            if (!grupo.length) continue;
+            const label = (mapaFoco[focoId] && mapaFoco[focoId].nome) || focoId;
+            html += `<optgroup label="${escapeHtml(label)}">`;
+            html += grupo.map(p =>
+                `<option value="${escapeHtml(p.slug)}">${escapeHtml(p.nome)}</option>`
+            ).join('');
+            html += `</optgroup>`;
+        }
+        modeloSelect.innerHTML = html;
         const valido = baixados.find(p => p.slug === salvo);
         modeloSelect.value = valido ? salvo : baixados[0].slug;
         localStorage.setItem(LS_MODELO, modeloSelect.value);
+    }
+
+    function atualizarSeletorContexto(contextos, padrao) {
+        if (!ctxSelect) return;
+        const lista = contextos && contextos.length
+            ? contextos
+            : [{ tokens: CTX_PADRAO, label: '32k', nome: 'Recomendado', indicado: true, ram: '' }];
+        const padraoCtx = padrao || CTX_PADRAO;
+        const salvo = parseInt(localStorage.getItem(LS_CTX) || '', 10);
+        ctxSelect.innerHTML = lista.map((c) => {
+            const marca = c.indicado ? ' ★' : '';
+            const tip = [c.descricao, c.ram].filter(Boolean).join(' · ');
+            return `<option value="${c.tokens}" title="${escapeHtml(tip)}">${escapeHtml(c.label)}${marca} — ${escapeHtml(c.nome)}</option>`;
+        }).join('');
+        const valido = lista.find(c => c.tokens === salvo);
+        ctxSelect.value = String(valido ? salvo : padraoCtx);
+        localStorage.setItem(LS_CTX, ctxSelect.value);
     }
 
     function modeloAtual() {
@@ -186,30 +274,92 @@
             : (localStorage.getItem(LS_MODELO) || 'qwen2.5-coder:3b');
     }
 
+    function contextoAtual() {
+        const v = parseInt(ctxSelect && ctxSelect.value ? ctxSelect.value : (localStorage.getItem(LS_CTX) || CTX_PADRAO), 10);
+        return Number.isFinite(v) ? v : CTX_PADRAO;
+    }
+
     if (modeloSelect) {
         modeloSelect.addEventListener('change', () => {
             localStorage.setItem(LS_MODELO, modeloSelect.value);
         });
     }
 
-    presetsWrap.addEventListener('click', (e) => {
-        const btn = e.target.closest('[data-baixar]');
-        if (!btn) return;
-        baixarModelo(btn.dataset.baixar, btn);
+    if (ctxSelect) {
+        ctxSelect.addEventListener('change', () => {
+            localStorage.setItem(LS_CTX, ctxSelect.value);
+        });
+    }
+
+    if (btnCtxInfo && ctxInfo) {
+        btnCtxInfo.addEventListener('click', () => {
+            ctxInfo.classList.toggle('d-none');
+        });
+    }
+    if (btnCtxFechar && ctxInfo) {
+        btnCtxFechar.addEventListener('click', () => {
+            ctxInfo.classList.add('d-none');
+        });
+    }
+
+    presetsWrap.addEventListener('click', async (e) => {
+        const btnBaixar = e.target.closest('[data-baixar]');
+        if (btnBaixar) {
+            baixarModelo(btnBaixar.dataset.baixar, btnBaixar);
+            return;
+        }
+        const btnDeletar = e.target.closest('[data-deletar]');
+        if (btnDeletar) {
+            await deletarModelo(btnDeletar.dataset.deletar, btnDeletar);
+        }
     });
 
     if (btnGerenciar) {
         btnGerenciar.addEventListener('click', async () => {
             await verificarStatus();
-            if (!ultimoStatus) return;
-            mostrarGate('Modelos disponiveis',
-                'Baixe outros modelos ou troque o atual depois no header do chat.',
-                { presets: true, presetsData: ultimoStatus.presets }
+            if (!ultimoStatus || !ultimoStatus.ollama_ativo) return;
+            mostrarGate('Gerenciar modelos',
+                'Baixe novos modelos ou remova os que nao usa mais para liberar espaco.',
+                { presets: true, presetsData: ultimoStatus.presets, gerenciar: true, voltar: true }
             );
         });
     }
 
+    if (btnVoltar) {
+        btnVoltar.addEventListener('click', async () => {
+            const ok = await verificarStatus();
+            if (ok) esconderGate();
+        });
+    }
+
+    async function deletarModelo(slug, btn) {
+        if (!confirm(`Remover o modelo "${slug}" do disco?\nIsso libera espaco, mas sera necessario baixar de novo para usar.`)) {
+            return;
+        }
+        if (btn) btn.disabled = true;
+        gateErro.classList.add('d-none');
+        try {
+            const resp = await fetch('/api/ai/delete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ modelo: slug }),
+            });
+            const data = await resp.json();
+            if (!resp.ok || !data.ok) throw new Error(data.msg || ('HTTP ' + resp.status));
+
+            if (localStorage.getItem(LS_MODELO) === slug) {
+                localStorage.removeItem(LS_MODELO);
+            }
+
+            await verificarStatus();
+        } catch (err) {
+            exibirErro(err.message);
+            if (btn) btn.disabled = false;
+        }
+    }
+
     function esconderGate() {
+        modoGerenciar = false;
         gate.classList.add('d-none');
         chat.classList.remove('d-none');
         carregarChats();
@@ -560,7 +710,7 @@
             const resp = await fetch(`/api/ai/chats/${chatAtual.id}/mensagens`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ conteudo: texto, modelo: modeloAtual() }),
+                body: JSON.stringify({ conteudo: texto, modelo: modeloAtual(), num_ctx: contextoAtual() }),
             });
             if (!resp.ok || !resp.body) {
                 const txt = await resp.text();
