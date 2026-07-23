@@ -5,6 +5,13 @@
 
     let ocupado = false;
 
+    function formatBytes(b) {
+        if (!b) return '0 B';
+        if (b < 1024) return b + ' B';
+        if (b < 1024 * 1024) return (b / 1024).toFixed(1) + ' KB';
+        return (b / (1024 * 1024)).toFixed(2) + ' MB';
+    }
+
     function mostrarAlerta(tipo, msg) {
         if (!alerta) return;
         alerta.className = `alert alert-${tipo}`;
@@ -25,6 +32,18 @@
         grid.querySelectorAll('button').forEach((btn) => {
             btn.disabled = disabled;
         });
+    }
+
+    function labelDados(extra) {
+        if (extra.escopo_dados === 'ai-chat') {
+            return extra.dados_chats > 0
+                ? `Deletar dados (${extra.dados_chats})`
+                : 'Deletar dados';
+        }
+        if (extra.dados_arquivos > 0) {
+            return `Deletar dados (${formatBytes(extra.dados_bytes)})`;
+        }
+        return 'Deletar dados';
     }
 
     async function lerStream(resp, onEvento) {
@@ -85,9 +104,50 @@
 
             mostrarAlerta('success', resultado.msg || 'Concluido');
             await atualizarCards();
+            if (typeof window.atualizarLabelLixo === 'function') window.atualizarLabelLixo();
         } catch (err) {
             mostrarAlerta('danger', err.message || 'Erro na operacao');
             await atualizarCards();
+        } finally {
+            ocupado = false;
+            setBotoesDisabled(false);
+        }
+    }
+
+    async function deletarDados(escopo) {
+        if (ocupado) return;
+        ocupado = true;
+        esconderAlerta();
+        setBotoesDisabled(true);
+        try {
+            const infoResp = await fetch(`/api/limpar-info/${escopo}`);
+            const info = await infoResp.json();
+
+            if (escopo === 'ai-chat') {
+                if (!info.chats) {
+                    alert('Nenhuma conversa para apagar.');
+                    return;
+                }
+                if (!confirm(`Apagar ${info.chats} conversa(s) desta ferramenta?`)) return;
+            } else {
+                if (!info.arquivos) {
+                    alert('Nenhum arquivo para apagar.');
+                    return;
+                }
+                if (!confirm(`Apagar ${info.arquivos} arquivo(s) (${formatBytes(info.bytes)}) desta ferramenta?`)) return;
+            }
+
+            const resp = await fetch(`/api/limpar-agora/${escopo}`, { method: 'POST' });
+            const data = await resp.json();
+            if (escopo === 'ai-chat') {
+                mostrarAlerta('success', `${data.chats || 0} conversa(s) removida(s).`);
+            } else {
+                mostrarAlerta('success', `${data.arquivos} arquivo(s) removidos (${formatBytes(data.bytes)}).`);
+            }
+            await atualizarCards();
+            if (typeof window.atualizarLabelLixo === 'function') window.atualizarLabelLixo();
+        } catch (err) {
+            mostrarAlerta('danger', err.message || 'Erro ao apagar dados');
         } finally {
             ocupado = false;
             setBotoesDisabled(false);
@@ -99,16 +159,19 @@
         const status = extra.instalado
             ? '<span class="badge text-bg-success loja-status">Instalado</span>'
             : '<span class="badge text-bg-secondary loja-status">Disponivel</span>';
-        const acao = extra.instalado
+        const pacote = extra.instalado
             ? `<button type="button" class="btn btn-outline-danger btn-loja-desinstalar" data-slug="${extra.slug}">
-                   <i class="bi bi-trash3"></i> Desinstalar
+                   <i class="bi bi-box-arrow-down"></i> Desinstalar
                </button>`
             : `<button type="button" class="btn btn-primary btn-loja-instalar" data-slug="${extra.slug}">
                    <i class="bi bi-download"></i> Instalar
                </button>`;
+        const dados = `<button type="button" class="btn btn-sm btn-limpar btn-loja-dados" data-escopo="${extra.escopo_dados}" title="Apaga arquivos/conversas desta ferramenta">
+                <i class="bi bi-trash3"></i> <span class="btn-loja-dados-label">${escapeHtml(labelDados(extra))}</span>
+            </button>`;
 
         return `
-        <div class="col-12 col-md-6" data-extra="${extra.slug}">
+        <div class="col-12 col-md-6" data-extra="${extra.slug}" data-escopo="${extra.escopo_dados}">
             <div class="card h-100 tool-card hub-card">
                 <div class="card-body d-flex flex-column p-4">
                     <div class="d-flex align-items-center gap-3 mb-3">
@@ -125,7 +188,7 @@
                         <i class="bi bi-box-seam me-1"></i>
                         <code class="loja-pkgs">${escapeHtml(pkgs)}</code>
                     </p>
-                    <div class="d-flex flex-wrap gap-2">${acao}</div>
+                    <div class="d-flex flex-wrap gap-2">${pacote}${dados}</div>
                     <pre class="loja-log form-control mt-3 mb-0 d-none small font-monospace"></pre>
                 </div>
             </div>
@@ -144,16 +207,22 @@
         grid.innerHTML = (data.extras || []).map(renderCard).join('');
     }
 
+    // Atualiza labels de tamanho na carga inicial
+    atualizarCards();
+
     grid.addEventListener('click', (e) => {
         const instalar = e.target.closest('.btn-loja-instalar');
         const desinstalar = e.target.closest('.btn-loja-desinstalar');
+        const dados = e.target.closest('.btn-loja-dados');
         if (instalar) {
             operar(instalar.dataset.slug, 'instalar');
         } else if (desinstalar) {
             const slug = desinstalar.dataset.slug;
-            if (confirm('Remover este pacote? A ferramenta sumira da home.')) {
+            if (confirm('Remover este pacote? A ferramenta sumira da home. Os arquivos gerados nao sao apagados.')) {
                 operar(slug, 'desinstalar');
             }
+        } else if (dados) {
+            deletarDados(dados.dataset.escopo);
         }
     });
 })();

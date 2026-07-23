@@ -19,45 +19,19 @@ Instale sob demanda pela **Loja** (`/loja`):
 
 ## Como usar
 
-### Windows — duplo clique
+### Windows
 
-1. Execute `start.bat` (primeira execucao cria o `venv` e instala o nucleo).
-2. O navegador abre em `http://localhost:7777`.
-3. Abra **Loja** e instale as ferramentas que quiser.
-4. Pra fechar, feche o terminal.
-
-### Windows — PowerShell
+Duplo clique em `start.bat`, ou no terminal:
 
 ```powershell
 cd caminho\para\personal-hub
-
-python -m venv venv
-.\venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-pip install -r requirements.txt
-
-Start-Process http://localhost:7777
-python -m uvicorn app.main:app --host 127.0.0.1 --port 7777 --reload
-```
-
-Se a ativacao do venv falhar por politica de execucao:
-
-```powershell
-Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
-```
-
-Ou use:
-
-```powershell
 .\start.bat
 ```
 
-### Windows — CMD
-
-```cmd
-cd caminho\para\personal-hub
-start.bat
-```
+1. A primeira execucao cria o `venv` e instala o nucleo.
+2. O navegador abre em `http://localhost:7777`.
+3. Abra **Loja** e instale as ferramentas que quiser.
+4. Pra fechar, feche o terminal.
 
 ### Linux / macOS
 
@@ -70,7 +44,7 @@ chmod +x start.sh
 
 - **Porta 7777** (nao conflita com Apache/XAMPP, MySQL, Docker padrao).
 - **Loja** instala e remove pacotes opcionais sem sujar a raiz do projeto.
-- **Botao "Limpar Lixo"** remove arquivos em `storage/uploads/` e `storage/outputs/`.
+- **Botao "Limpar Tudo"** remove arquivos em `storage/uploads/` e `storage/outputs/`.
 - **SQLite local** em `storage/hub.db` (senhas PDF e chat de IA).
 - **FFmpeg embutido** via `imageio-ffmpeg` (quando o extra Video estiver instalado).
 - **Ollama** em `localhost:11434` para o Assistente de IA.

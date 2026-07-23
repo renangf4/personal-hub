@@ -1,6 +1,52 @@
 (function () {
     const formAdd = document.getElementById('form-add-senha');
     const lista = document.getElementById('lista-senhas');
+    const formProc = document.getElementById('form-processar');
+    const modoSelect = document.getElementById('unlock-modo');
+    const salvarWrap = document.getElementById('unlock-salvar-wrap');
+    const senhasCard = document.getElementById('unlock-senhas-card');
+    const wordlistFonte = document.getElementById('wordlist-fonte');
+    const wordlistUploadWrap = document.getElementById('wordlist-upload-wrap');
+
+    function atualizarWordlistFonte() {
+        if (!wordlistUploadWrap) return;
+        const upload = wordlistFonte && wordlistFonte.value === 'upload';
+        wordlistUploadWrap.classList.toggle('d-none', !upload);
+    }
+
+    function atualizarModo() {
+        const modo = (modoSelect && modoSelect.value) || 'salvas';
+        document.querySelectorAll('[data-unlock-pane]').forEach((el) => {
+            el.classList.toggle('d-none', el.getAttribute('data-unlock-pane') !== modo);
+        });
+        if (salvarWrap) {
+            salvarWrap.classList.toggle('d-none', modo === 'salvas');
+        }
+        if (senhasCard) {
+            senhasCard.classList.toggle('d-none', modo !== 'salvas');
+        }
+        atualizarWordlistFonte();
+    }
+
+    if (modoSelect) {
+        modoSelect.addEventListener('change', atualizarModo);
+        atualizarModo();
+    }
+    if (wordlistFonte) {
+        wordlistFonte.addEventListener('change', atualizarWordlistFonte);
+    }
+
+    if (formProc) {
+        formProc.addEventListener('submit', () => {
+            setTimeout(async () => {
+                try {
+                    const resp = await fetch('/api/senhas');
+                    const data = await resp.json();
+                    if (data.senhas) renderSenhas(data.senhas);
+                } catch (_) {}
+            }, 800);
+        });
+    }
 
     if (!formAdd || !lista) return;
 

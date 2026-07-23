@@ -175,6 +175,12 @@ async def processar(
     arquivos: list[UploadFile] = File(...),
     max_width: int | None = Form(None),
     quality: int | None = Form(None),
+    modo: str | None = Form(None),
+    senha_avulsa: str | None = Form(None),
+    salvar_senha: str | None = Form(None),
+    pin_digits: str | None = Form(None),
+    wordlist_fonte: str | None = Form(None),
+    wordlist: UploadFile | None = File(None),
 ):
     tool = registry.TOOLS.get(slug)
     if not tool:
@@ -202,7 +208,37 @@ async def processar(
             entradas, output_dir, max_width=largura, quality=q, formato=tool["formato"]
         )
     elif slug == "unlock-pdf":
-        resultados = tool["modulo"].processar(entradas, output_dir, senhas=db.senhas_como_lista())
+        modo_unlock = (modo or "salvas").strip().lower()
+        if modo_unlock not in ("salvas", "unica", "wordlist", "numerico"):
+            modo_unlock = "salvas"
+        wordlist_path = None
+        pin = None
+        fonte_wl = (wordlist_fonte or "comuns").strip().lower()
+        if fonte_wl not in ("comuns", "upload"):
+            fonte_wl = "comuns"
+        if modo_unlock == "wordlist" and fonte_wl == "upload" and wordlist and wordlist.filename:
+            wl = upload_dir / "wordlist.txt"
+            wl.write_bytes(await wordlist.read())
+            wordlist_path = wl
+        if modo_unlock == "numerico" and pin_digits and str(pin_digits).isdigit():
+            n = int(pin_digits)
+            if 3 <= n <= 6:
+                pin = n
+        resultados = tool["modulo"].processar(
+            entradas,
+            output_dir,
+            modo=modo_unlock,
+            senhas=db.senhas_como_lista() if modo_unlock == "salvas" else None,
+            senha_avulsa=senha_avulsa if modo_unlock == "unica" else None,
+            wordlist=wordlist_path,
+            wordlist_fonte=fonte_wl if modo_unlock == "wordlist" else "comuns",
+            pin_digits=pin,
+        )
+        if modo_unlock != "salvas" and salvar_senha in ("1", "on", "true", "True"):
+            for r in resultados:
+                s = r.get("senha_usada")
+                if r.get("ok") and s:
+                    db.adicionar_senha(s)
     else:
         resultados = tool["modulo"].processar(entradas, output_dir)
 

@@ -175,17 +175,25 @@ def home_itens() -> list[dict]:
 
 
 def listar_loja() -> list[dict[str, Any]]:
-    return [
-        {
+    from .cleanup import info_armazenamento
+
+    itens = []
+    for slug, extra in EXTRAS.items():
+        escopo = extra.get("escopo_dados", slug)
+        info = info_armazenamento(escopo)
+        itens.append({
             "slug": slug,
             "nome": extra["nome"],
             "descricao": extra["descricao"],
             "icone": extra["icone"],
             "packages": list(extra["packages"]),
             "instalado": extra_instalado(slug),
-        }
-        for slug, extra in EXTRAS.items()
-    ]
+            "escopo_dados": escopo,
+            "dados_arquivos": info.get("arquivos", 0),
+            "dados_bytes": info.get("bytes", 0),
+            "dados_chats": info.get("chats", 0),
+        })
+    return itens
 
 
 rebuild()

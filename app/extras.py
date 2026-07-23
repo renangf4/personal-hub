@@ -11,6 +11,7 @@ EXTRAS: dict[str, dict] = {
         "packages": ["imageio-ffmpeg==0.5.1"],
         "imports": ["imageio_ffmpeg"],
         "modulos": ["convert_video"],
+        "escopo_dados": "video",
     },
     "imagem": {
         "slug": "imagem",
@@ -20,6 +21,7 @@ EXTRAS: dict[str, dict] = {
         "packages": ["pillow==11.0.0"],
         "imports": ["PIL"],
         "modulos": ["convert_image"],
+        "escopo_dados": "imagem",
     },
     "wp-screenshot": {
         "slug": "wp-screenshot",
@@ -29,6 +31,7 @@ EXTRAS: dict[str, dict] = {
         "packages": ["pillow==11.0.0"],
         "imports": ["PIL"],
         "modulos": ["wp_screenshot"],
+        "escopo_dados": "wp-screenshot",
     },
     "pdf": {
         "slug": "pdf",
@@ -38,6 +41,7 @@ EXTRAS: dict[str, dict] = {
         "packages": ["pikepdf==9.4.2"],
         "imports": ["pikepdf"],
         "modulos": ["unlock_pdf"],
+        "escopo_dados": "unlock-pdf",
     },
     "ai": {
         "slug": "ai",
@@ -47,6 +51,7 @@ EXTRAS: dict[str, dict] = {
         "packages": ["httpx==0.27.2"],
         "imports": ["httpx"],
         "modulos": ["ai_chat"],
+        "escopo_dados": "ai-chat",
     },
 }
 

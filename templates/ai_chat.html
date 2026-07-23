@@ -94,7 +94,7 @@
                     </span>
                     <span>
                         Contexto:
-                        <select id="ai-ctx-select" class="form-select form-select-sm ai-chat__modelo" title="Context length (num_ctx)"></select>
+                        <select id="ai-ctx-select" class="form-select form-select-sm ai-chat__modelo" title="Tamanho do contexto (num_ctx) — quanto maior, mais RAM (e VRAM na GPU)"></select>
                         <button type="button" id="ai-btn-ctx-info" class="btn btn-link btn-sm p-0 align-baseline" title="O que e context length?">
                             <i class="bi bi-info-circle"></i>
                         </button>
@@ -122,16 +122,17 @@
                 </div>
                 <p class="small mb-2">
                     Quantidade maxima de tokens que o modelo consegue &quot;lembrar&quot; na conversa
-                    (historico + codigo + logs). Mais contexto = mais memoria RAM/VRAM e resposta mais lenta.
+                    (historico + codigo + logs). Mais contexto = mais <strong>RAM</strong> do sistema
+                    (e <strong>VRAM</strong> se o modelo estiver na GPU) e resposta mais lenta.
                 </p>
                 <ul class="small mb-2 ps-3">
-                    <li><strong>4k–8k</strong> — perguntas curtas</li>
-                    <li><strong>16k–32k</strong> — codigo / pentest do dia a dia (recomendado: 32k)</li>
-                    <li><strong>64k+</strong> — logs grandes ou varios arquivos</li>
-                    <li><strong>128k</strong> — so se tiver RAM sobrando</li>
+                    <li><strong>4k–8k</strong> — perguntas curtas, pouca RAM</li>
+                    <li><strong>16k–32k</strong> — codigo / uso diario (recomendado: 32k, ~16 GB RAM)</li>
+                    <li><strong>64k+</strong> — logs grandes; sobe o uso de RAM (e VRAM na GPU)</li>
                 </ul>
                 <p class="small text-secondary mb-0">
                     Regra pratica: comece em <strong>32k</strong>. Se ficar lento ou travar, diminua.
+                    Os GB do seletor sao de <strong>memoria RAM</strong> do PC (nao tamanho do modelo).
                     Se colar arquivos grandes e o modelo &quot;esquecer&quot; o inicio, aumente.
                 </p>
             </div>

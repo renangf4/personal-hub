@@ -25,66 +25,103 @@
     </button>
 </div>
 
-<div class="row g-4">
-    <div class="col-12 col-lg-7">
-        <div class="card hub-card mb-4">
-            <div class="card-body p-4">
-                <h2 class="h6 text-secondary text-uppercase mb-3 hub-section-label">Desbloquear PDFs</h2>
-                <form id="form-processar" data-slug="{{ tool.slug }}">
-                    <div class="mb-3">
-                        <label class="form-label">Arquivos PDF</label>
-                        <input class="form-control" type="file" name="arquivos" accept=".pdf,application/pdf" multiple required>
-                    </div>
-                    <button type="submit" class="btn btn-primary">
-                        <i class="bi bi-unlock"></i> Desbloquear
-                    </button>
-                </form>
+<div class="card hub-card mb-4">
+    <div class="card-body p-4">
+        <h2 class="h6 text-secondary text-uppercase mb-3 hub-section-label">Desbloquear PDFs</h2>
+        <form id="form-processar" data-slug="{{ tool.slug }}">
+            <div class="mb-3">
+                <label class="form-label">Arquivos PDF</label>
+                <input class="form-control" type="file" name="arquivos" accept=".pdf,application/pdf" multiple required>
             </div>
-        </div>
 
-        <div id="status" class="d-none alert alert-info">
-            <div class="d-flex align-items-center">
-                <div class="spinner-border spinner-border-sm me-2" role="status"></div>
-                <span>Processando, aguarde...</span>
+            <div class="mb-3">
+                <label class="form-label">Tipo de desbloqueio</label>
+                <select class="form-select" name="modo" id="unlock-modo">
+                    <option value="salvas" selected>Senhas salvas</option>
+                    <option value="unica">Senha unica</option>
+                    <option value="wordlist">Wordlist</option>
+                    <option value="numerico">PIN numerico</option>
+                </select>
             </div>
-        </div>
 
-        <div id="resultados-wrap" class="d-none">
-            <h2 class="h6 text-secondary text-uppercase mb-2">Resultados</h2>
-            <div class="list-group" id="resultados"></div>
-        </div>
+            <div class="mb-3 d-none" data-unlock-pane="unica">
+                <label class="form-label">Senha</label>
+                <input class="form-control" type="text" name="senha_avulsa" placeholder="Senha do PDF">
+            </div>
+
+            <div class="mb-3 d-none" data-unlock-pane="wordlist">
+                <label class="form-label">Fonte</label>
+                <select class="form-select" name="wordlist_fonte" id="wordlist-fonte">
+                    <option value="comuns" selected>Senhas comuns (embutida)</option>
+                    <option value="upload">Upload .txt</option>
+                </select>
+                <div class="mt-2 d-none" id="wordlist-upload-wrap">
+                    <input class="form-control" type="file" name="wordlist" accept=".txt,text/plain">
+                    <small class="text-secondary">Uma senha por linha. Listas grandes (rockyou, SecLists) via upload.</small>
+                </div>
+            </div>
+
+            <div class="mb-3 d-none" data-unlock-pane="numerico">
+                <label class="form-label">Digitos</label>
+                <select class="form-select" name="pin_digits">
+                    <option value="3">3 digitos (000–999)</option>
+                    <option value="4" selected>4 digitos (0000–9999)</option>
+                    <option value="5">5 digitos — pode demorar</option>
+                    <option value="6">6 digitos — bem lento</option>
+                </select>
+            </div>
+
+            <div class="form-check mb-3 d-none" id="unlock-salvar-wrap">
+                <input class="form-check-input" type="checkbox" name="salvar_senha" value="1" id="salvar_senha" checked>
+                <label class="form-check-label" for="salvar_senha">Salvar senha que funcionar</label>
+            </div>
+
+            <button type="submit" class="btn btn-primary">
+                <i class="bi bi-unlock"></i> Desbloquear
+            </button>
+        </form>
     </div>
+</div>
 
-    <div class="col-12 col-lg-5">
-        <div class="card hub-card">
-            <div class="card-body p-4">
-                <h2 class="h6 text-uppercase text-secondary mb-3 hub-section-label">Senhas salvas</h2>
+<div class="card hub-card mb-4" id="unlock-senhas-card">
+    <div class="card-body p-4">
+        <h2 class="h6 text-uppercase text-secondary mb-3 hub-section-label">Senhas salvas</h2>
 
-                <form id="form-add-senha" class="mb-3">
-                    <div class="input-group">
-                        <input class="form-control" type="text" name="senha" placeholder="Nova senha" required>
-                        <button class="btn btn-outline-primary" type="submit">
-                            <i class="bi bi-plus-lg"></i>
-                        </button>
-                    </div>
-                    <small class="text-secondary">As senhas sao persistidas em SQLite local.</small>
-                </form>
-
-                <ul class="list-group" id="lista-senhas">
-                    {% for s in senhas %}
-                    <li class="list-group-item d-flex justify-content-between align-items-center" data-id="{{ s.id }}">
-                        <code>{{ s.senha }}</code>
-                        <button class="btn btn-sm btn-outline-danger btn-remover-senha" data-id="{{ s.id }}" title="Remover">
-                            <i class="bi bi-x-lg"></i>
-                        </button>
-                    </li>
-                    {% else %}
-                    <li class="list-group-item text-secondary text-center">Nenhuma senha cadastrada</li>
-                    {% endfor %}
-                </ul>
+        <form id="form-add-senha" class="mb-3">
+            <div class="input-group">
+                <input class="form-control" type="text" name="senha" placeholder="Nova senha" required>
+                <button class="btn btn-outline-primary" type="submit">
+                    <i class="bi bi-plus-lg"></i>
+                </button>
             </div>
-        </div>
+            <small class="text-secondary">As senhas sao persistidas em SQLite local.</small>
+        </form>
+
+        <ul class="list-group" id="lista-senhas">
+            {% for s in senhas %}
+            <li class="list-group-item d-flex justify-content-between align-items-center" data-id="{{ s.id }}">
+                <code>{{ s.senha }}</code>
+                <button class="btn btn-sm btn-outline-danger btn-remover-senha" data-id="{{ s.id }}" title="Remover">
+                    <i class="bi bi-x-lg"></i>
+                </button>
+            </li>
+            {% else %}
+            <li class="list-group-item text-secondary text-center">Nenhuma senha cadastrada</li>
+            {% endfor %}
+        </ul>
     </div>
+</div>
+
+<div id="status" class="d-none alert alert-info">
+    <div class="d-flex align-items-center">
+        <div class="spinner-border spinner-border-sm me-2" role="status"></div>
+        <span>Processando, aguarde...</span>
+    </div>
+</div>
+
+<div id="resultados-wrap" class="d-none">
+    <h2 class="h6 text-secondary text-uppercase mb-2">Resultados</h2>
+    <div class="list-group" id="resultados"></div>
 </div>
 {% endblock %}
 

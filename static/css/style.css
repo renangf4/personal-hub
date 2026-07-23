@@ -56,6 +56,8 @@ html {
 
 body {
     min-height: 100vh;
+    display: flex;
+    flex-direction: column;
     font-family: var(--hub-font);
     background:
         radial-gradient(1200px 600px at 10% -10%, rgba(10, 132, 255, 0.18), transparent 55%),
@@ -120,7 +122,32 @@ body {
 
 .hub-main {
     padding-top: 2rem;
-    padding-bottom: 4rem;
+    padding-bottom: 2rem;
+    flex: 1;
+}
+
+.hub-footer {
+    margin-top: auto;
+    border-top: 1px solid var(--hub-border);
+    background: rgba(7, 9, 13, 0.55);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+}
+
+.hub-footer__copy {
+    font-size: 0.85rem;
+    color: var(--hub-muted);
+}
+
+.hub-footer__link {
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: var(--hub-muted);
+    text-decoration: none;
+}
+
+.hub-footer__link:hover {
+    color: var(--hub-blue);
 }
 
 /* ——— Type ——— */
@@ -367,7 +394,10 @@ body {
 }
 
 .form-select {
-    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3cpath fill='none' stroke='%8b93a7' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='m2 5 6 6 6-6'/%3e%3c/svg%3e");
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3cpath fill='none' stroke='%238b93a7' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='m2 5 6 6 6-6'/%3e%3c/svg%3e");
+    background-repeat: no-repeat;
+    background-position: right 0.75rem center;
+    background-size: 16px 12px;
 }
 
 .form-select option,
