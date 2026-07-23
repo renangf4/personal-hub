@@ -163,6 +163,16 @@ def tool_page(request: Request, slug: str):
             },
         )
 
+    if slug == "rede-lookup":
+        return templates.TemplateResponse(
+            "rede_lookup.html",
+            {
+                "request": request,
+                "tool": tool,
+                "shodan_key": db.obter_setting("shodan_api_key"),
+            },
+        )
+
     return templates.TemplateResponse(
         "tool.html",
         {"request": request, "tool": tool, "controles": tool.get("controles", "none")},
@@ -472,23 +482,70 @@ def api_ai_chat_excluir(chat_id: int):
 
 
 @app.post("/api/ai/chats/{chat_id}/mensagens")
-async def api_ai_mensagem(chat_id: int, payload: dict = Body(...)):
-    conteudo = (payload.get("conteudo") or "").strip()
-    if not conteudo:
+async def api_ai_mensagem(chat_id: int, request: Request):
+    ai = _ai()
+    content_type = (request.headers.get("content-type") or "").lower()
+
+    texto = ""
+    modelo_raw = None
+    ctx_raw = None
+    arquivos_raw: list[tuple[str, bytes]] = []
+
+    if "multipart/form-data" in content_type:
+        form = await request.form()
+        texto = str(form.get("conteudo") or "").strip()
+        modelo_raw = form.get("modelo")
+        ctx_raw = form.get("num_ctx")
+        uploads = form.getlist("arquivos")
+        for up in uploads:
+            if hasattr(up, "read") and getattr(up, "filename", None):
+                arquivos_raw.append((up.filename, await up.read()))
+    else:
+        payload = await request.json()
+        texto = (payload.get("conteudo") or "").strip()
+        modelo_raw = payload.get("modelo")
+        ctx_raw = payload.get("num_ctx")
+
+    anexos_info: list[dict] = []
+    if arquivos_raw:
+        if len(arquivos_raw) > ai.MAX_ANEXOS:
+            raise HTTPException(status_code=400, detail=f"Maximo de {ai.MAX_ANEXOS} anexos")
+        for nome, dados in arquivos_raw:
+            anexos_info.append(ai.extrair_texto_bytes(nome, dados))
+
+    falhas = [a for a in anexos_info if not a.get("ok")]
+    ok_anexos = [a for a in anexos_info if a.get("ok")]
+    mensagem = ai.montar_mensagem_com_anexos(texto, ok_anexos)
+
+    if not mensagem:
+        if falhas:
+            raise HTTPException(
+                status_code=400,
+                detail="; ".join(f"{f['nome']}: {f.get('msg', 'erro')}" for f in falhas),
+            )
         raise HTTPException(status_code=400, detail="Mensagem vazia")
 
-    ai = _ai()
-    modelo = _modelo_permitido(payload.get("modelo"))
-    num_ctx = _contexto_permitido(payload.get("num_ctx"))
+    modelo_ok = _modelo_permitido(modelo_raw)
+    num_ctx_ok = _contexto_permitido(ctx_raw)
 
     chat = db.obter_chat(chat_id)
     if not chat:
         raise HTTPException(status_code=404)
 
-    msg_user = db.adicionar_mensagem(chat_id, "user", conteudo)
+    if ok_anexos and not texto:
+        nomes = ", ".join(a["nome"] for a in ok_anexos)
+        mensagem = f"(anexos: {nomes})\n\n{mensagem}"
+    elif falhas:
+        avisos = "\n".join(f"[anexo ignorado: {f['nome']} — {f.get('msg')}]" for f in falhas)
+        mensagem = f"{mensagem}\n\n{avisos}"
+
+    msg_user = db.adicionar_mensagem(chat_id, "user", mensagem)
 
     if chat["titulo"] == "Nova conversa":
-        novo_titulo = conteudo.strip().splitlines()[0][:60]
+        base = texto.strip().splitlines()[0] if texto.strip() else (
+            ok_anexos[0]["nome"] if ok_anexos else mensagem.splitlines()[0]
+        )
+        novo_titulo = (base or "")[:60]
         if novo_titulo:
             db.renomear_chat(chat_id, novo_titulo)
 
@@ -502,7 +559,7 @@ async def api_ai_mensagem(chat_id: int, payload: dict = Body(...)):
         yield (json.dumps({"tipo": "user_msg", "mensagem": msg_user}) + "\n").encode("utf-8")
 
         partes: list[str] = []
-        async for chunk in ai.stream_chat(modelo, historico, num_ctx=num_ctx):
+        async for chunk in ai.stream_chat(modelo_ok, historico, num_ctx=num_ctx_ok):
             if chunk.get("erro"):
                 yield (
                     json.dumps({"tipo": "erro", "msg": chunk.get("msg", "Erro desconhecido")}) + "\n"
@@ -533,3 +590,81 @@ async def api_ai_mensagem(chat_id: int, payload: dict = Body(...)):
                 return
 
     return StreamingResponse(gerar(), media_type="application/x-ndjson")
+
+
+def _rede():
+    mod = registry.modulo("rede_lookup")
+    if mod is None:
+        raise HTTPException(status_code=404, detail="DNS e Whois nao instalado. Abra a Loja.")
+    return mod
+
+
+@app.get("/api/rede/meu-ip")
+async def api_rede_meu_ip():
+    rede = _rede()
+    return rede.meu_ip_publico()
+
+
+@app.get("/api/rede/shodan-key")
+def api_rede_shodan_key_get():
+    _rede()
+    key = db.obter_setting("shodan_api_key")
+    return {"ok": True, "configurada": bool(key), "key": key}
+
+
+@app.post("/api/rede/shodan-key")
+async def api_rede_shodan_key_set(payload: dict = Body(...)):
+    _rede()
+    key = str(payload.get("key") or "").strip()
+    db.salvar_setting("shodan_api_key", key)
+    return {"ok": True, "configurada": bool(key)}
+
+
+@app.post("/api/rede/shodan")
+async def api_rede_shodan(payload: dict = Body(...)):
+    rede = _rede()
+    alvo = payload.get("alvo") or ""
+    key = db.obter_setting("shodan_api_key")
+    try:
+        return rede.consultar_shodan(alvo, key)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@app.post("/api/rede/dns")
+async def api_rede_dns(payload: dict = Body(...)):
+    rede = _rede()
+    alvo = payload.get("alvo") or ""
+    tipos = payload.get("tipos")
+    try:
+        return rede.consultar_dns(alvo, tipos)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@app.post("/api/rede/whois")
+async def api_rede_whois(payload: dict = Body(...)):
+    rede = _rede()
+    alvo = payload.get("alvo") or ""
+    try:
+        return rede.consultar_whois(alvo)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@app.post("/api/rede/ip")
+async def api_rede_ip(payload: dict = Body(...)):
+    rede = _rede()
+    alvo = payload.get("alvo") or ""
+    try:
+        return rede.consultar_ip(alvo)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e

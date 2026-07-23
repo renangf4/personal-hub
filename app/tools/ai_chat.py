@@ -653,3 +653,86 @@ async def stream_chat(
         yield {"erro": True, "msg": "Ollama nao esta rodando em localhost:11434"}
     except Exception as e:
         yield {"erro": True, "msg": f"Falha no chat: {e}"}
+
+
+EXTENSOES_TEXTO = {
+    ".txt", ".md", ".markdown", ".csv", ".tsv", ".json", ".xml", ".html", ".htm",
+    ".css", ".scss", ".less", ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs",
+    ".py", ".pyw", ".rb", ".php", ".go", ".rs", ".java", ".kt", ".c", ".cpp",
+    ".h", ".hpp", ".cs", ".swift", ".sql", ".yml", ".yaml", ".toml", ".ini",
+    ".cfg", ".conf", ".env", ".sh", ".bash", ".zsh", ".bat", ".ps1", ".log",
+    ".vue", ".svelte", ".r", ".lua", ".pl", ".dockerfile",
+}
+
+MAX_ANEXO_BYTES = 4 * 1024 * 1024
+MAX_ANEXOS = 5
+MAX_TEXTO_TOTAL = 120_000
+MAX_TEXTO_POR_ARQUIVO = 80_000
+
+
+def extrair_texto_bytes(nome: str, dados: bytes) -> dict:
+    """Extrai texto de um anexo. Retorna {ok, nome, texto, msg?}."""
+    nome = Path(nome).name or "anexo"
+    ext = Path(nome).suffix.lower()
+    if len(dados) > MAX_ANEXO_BYTES:
+        return {"ok": False, "nome": nome, "texto": "", "msg": "Arquivo maior que 4 MB"}
+
+    if ext == ".pdf":
+        try:
+            from io import BytesIO
+            from pypdf import PdfReader
+            reader = PdfReader(BytesIO(dados))
+            partes = []
+            for page in reader.pages:
+                t = page.extract_text() or ""
+                if t.strip():
+                    partes.append(t)
+            texto = "\n\n".join(partes).strip()
+            if not texto:
+                return {"ok": False, "nome": nome, "texto": "", "msg": "PDF sem texto extraivel (pode ser so imagem)"}
+            if len(texto) > MAX_TEXTO_POR_ARQUIVO:
+                texto = texto[:MAX_TEXTO_POR_ARQUIVO] + "\n\n[... truncado ...]"
+            return {"ok": True, "nome": nome, "texto": texto}
+        except ImportError:
+            return {
+                "ok": False,
+                "nome": nome,
+                "texto": "",
+                "msg": "Suporte a PDF ausente — reinstale o Assistente na Loja (instala pypdf)",
+            }
+        except Exception as e:
+            return {"ok": False, "nome": nome, "texto": "", "msg": f"Falha ao ler PDF: {e}"}
+
+    if ext in EXTENSOES_TEXTO or ext == "":
+        try:
+            texto = dados.decode("utf-8")
+        except UnicodeDecodeError:
+            try:
+                texto = dados.decode("latin-1")
+            except Exception as e:
+                return {"ok": False, "nome": nome, "texto": "", "msg": str(e)}
+        texto = texto.replace("\x00", "")
+        if len(texto) > MAX_TEXTO_POR_ARQUIVO:
+            texto = texto[:MAX_TEXTO_POR_ARQUIVO] + "\n\n[... truncado ...]"
+        return {"ok": True, "nome": nome, "texto": texto}
+
+    return {"ok": False, "nome": nome, "texto": "", "msg": f"Tipo nao suportado ({ext or 'sem extensao'})"}
+
+
+def montar_mensagem_com_anexos(conteudo: str, anexos: list[dict]) -> str:
+    """Monta o texto final com anexos ok. anexos: resultados de extrair_texto_bytes."""
+    partes = [conteudo.strip()] if conteudo and conteudo.strip() else []
+    usados = 0
+    for a in anexos:
+        if not a.get("ok") or not a.get("texto"):
+            continue
+        bloco = a["texto"]
+        if usados + len(bloco) > MAX_TEXTO_TOTAL:
+            restante = MAX_TEXTO_TOTAL - usados
+            if restante < 200:
+                partes.append(f"\n[anexo omitido por limite de contexto: {a['nome']}]")
+                continue
+            bloco = bloco[:restante] + "\n\n[... truncado por limite total ...]"
+        usados += len(bloco)
+        partes.append(f"\n[anexo: {a['nome']}]\n{bloco}\n[/anexo]")
+    return "\n".join(partes).strip()

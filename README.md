@@ -10,6 +10,7 @@ Instale sob demanda pela **Loja** (`/loja`):
 - Imagem — WebP e Screenshot WordPress
 - Desbloquear PDF — senhas em SQLite
 - Assistente de IA Local — chat com Ollama
+- DNS e Whois — lookup DNS, Whois e info de IP
 
 ## Requisitos
 

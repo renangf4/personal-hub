@@ -48,10 +48,20 @@ EXTRAS: dict[str, dict] = {
         "nome": "Assistente de IA",
         "descricao": "Chat local com Ollama — carteiras por foco (codigo, seguranca, geral...).",
         "icone": "bi-robot",
-        "packages": ["httpx==0.27.2"],
-        "imports": ["httpx"],
+        "packages": ["httpx==0.27.2", "pypdf==5.1.0"],
+        "imports": ["httpx", "pypdf"],
         "modulos": ["ai_chat"],
         "escopo_dados": "ai-chat",
+    },
+    "rede": {
+        "slug": "rede",
+        "nome": "DNS e Whois",
+        "descricao": "Consulta DNS, Whois, IP/geo e Shodan pra dominio ou endereco.",
+        "icone": "bi-globe2",
+        "packages": ["dnspython==2.7.0", "python-whois==0.9.4", "httpx==0.27.2"],
+        "imports": ["dns", "whois", "httpx"],
+        "modulos": ["rede_lookup"],
+        "escopo_dados": "rede-lookup",
     },
 }
 
@@ -100,5 +110,14 @@ TOOL_META: dict[str, dict] = {
         "aceita": "",
         "controles": "ai",
         "extra": "ai",
+    },
+    "rede_lookup": {
+        "slug": "rede-lookup",
+        "nome": "DNS e Whois",
+        "descricao": "Lookup DNS, Whois, IP/geo e Shodan — util no dia a dia de dev.",
+        "icone": "bi-globe2",
+        "aceita": "",
+        "controles": "rede",
+        "extra": "rede",
     },
 }

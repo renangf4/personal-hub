@@ -155,7 +155,12 @@
     }
 
     function renderCard(extra) {
-        const pkgs = (extra.packages || []).join(', ');
+        const pkgs = (extra.packages || []).map((pkg) => `
+            <li class="loja-pkgs__item">
+                <i class="bi bi-box-seam"></i>
+                <code>${escapeHtml(pkg)}</code>
+            </li>
+        `).join('');
         const status = extra.instalado
             ? '<span class="badge text-bg-success loja-status">Instalado</span>'
             : '<span class="badge text-bg-secondary loja-status">Disponivel</span>';
@@ -184,10 +189,7 @@
                         </div>
                     </div>
                     <p class="card-text text-secondary flex-grow-1 small">${escapeHtml(extra.descricao)}</p>
-                    <p class="small text-secondary mb-3">
-                        <i class="bi bi-box-seam me-1"></i>
-                        <code class="loja-pkgs">${escapeHtml(pkgs)}</code>
-                    </p>
+                    <ul class="loja-pkgs list-unstyled small text-secondary mb-3">${pkgs}</ul>
                     <div class="d-flex flex-wrap gap-2">${pacote}${dados}</div>
                     <pre class="loja-log form-control mt-3 mb-0 d-none small font-monospace"></pre>
                 </div>

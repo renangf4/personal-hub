@@ -30,6 +30,9 @@
     const form = document.getElementById('ai-form');
     const input = document.getElementById('ai-input');
     const btnEnviar = document.getElementById('ai-btn-enviar');
+    const btnAnexo = document.getElementById('ai-btn-anexo');
+    const fileInput = document.getElementById('ai-file');
+    const anexosEl = document.getElementById('ai-anexos');
 
     const LS_MODELO = 'ai_chat_modelo';
     const LS_CTX = 'ai_chat_num_ctx';
@@ -39,6 +42,9 @@
     let ultimoStatus = null;
     let modoGerenciar = false;
     const CTX_PADRAO = 32768;
+    /** @type {File[]} */
+    let anexosPendentes = [];
+    const MAX_ANEXOS = 5;
 
     marked.setOptions({
         breaks: true,
@@ -734,18 +740,74 @@
         mensagensEl.scrollTop = mensagensEl.scrollHeight;
     }
 
+    function renderAnexos() {
+        if (!anexosEl) return;
+        if (!anexosPendentes.length) {
+            anexosEl.classList.add('d-none');
+            anexosEl.innerHTML = '';
+            return;
+        }
+        anexosEl.classList.remove('d-none');
+        anexosEl.innerHTML = anexosPendentes.map((f, i) => `
+            <span class="ai-chat__anexo-chip" data-idx="${i}">
+                <i class="bi bi-paperclip"></i>
+                <span title="${escapeHtml(f.name)}">${escapeHtml(f.name)}</span>
+                <button type="button" data-remover-anexo="${i}" title="Remover">&times;</button>
+            </span>
+        `).join('');
+    }
+
+    function adicionarAnexos(lista) {
+        for (const f of lista) {
+            if (anexosPendentes.length >= MAX_ANEXOS) break;
+            if (anexosPendentes.some((x) => x.name === f.name && x.size === f.size)) continue;
+            anexosPendentes.push(f);
+        }
+        renderAnexos();
+    }
+
+    if (btnAnexo && fileInput) {
+        btnAnexo.addEventListener('click', () => fileInput.click());
+        fileInput.addEventListener('change', () => {
+            adicionarAnexos(Array.from(fileInput.files || []));
+            fileInput.value = '';
+        });
+    }
+
+    if (anexosEl) {
+        anexosEl.addEventListener('click', (e) => {
+            const btn = e.target.closest('[data-remover-anexo]');
+            if (!btn) return;
+            const idx = Number(btn.dataset.removerAnexo);
+            anexosPendentes.splice(idx, 1);
+            renderAnexos();
+        });
+    }
+
+    input.addEventListener('paste', (e) => {
+        const items = e.clipboardData && e.clipboardData.files;
+        if (items && items.length) {
+            adicionarAnexos(Array.from(items));
+        }
+    });
+
     form.addEventListener('submit', async (e) => {
         e.preventDefault();
         if (enviando || !chatAtual) return;
         const texto = input.value.trim();
-        if (!texto) return;
+        if (!texto && !anexosPendentes.length) return;
 
         enviando = true;
         input.disabled = true;
         btnEnviar.disabled = true;
+        if (btnAnexo) btnAnexo.disabled = true;
+        const filesEnvio = anexosPendentes.slice();
         input.value = '';
+        anexosPendentes = [];
+        renderAnexos();
 
-        adicionarMensagem('user', texto);
+        const preview = texto || filesEnvio.map((f) => '📎 ' + f.name).join('\n');
+        adicionarMensagem('user', preview);
         const wrapAssistente = adicionarMensagem('assistant', '');
         const corpoAssistente = wrapAssistente.querySelector('.ai-chat__msg-corpo');
         const cursor = document.createElement('span');
@@ -755,10 +817,15 @@
         let acumulado = '';
 
         try {
+            const fd = new FormData();
+            fd.append('conteudo', texto);
+            fd.append('modelo', modeloAtual());
+            fd.append('num_ctx', String(contextoAtual()));
+            filesEnvio.forEach((f) => fd.append('arquivos', f, f.name));
+
             const resp = await fetch(`/api/ai/chats/${chatAtual.id}/mensagens`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ conteudo: texto, modelo: modeloAtual(), num_ctx: contextoAtual() }),
+                body: fd,
             });
             if (!resp.ok || !resp.body) {
                 const txt = await resp.text();
@@ -802,6 +869,7 @@
             enviando = false;
             input.disabled = false;
             btnEnviar.disabled = false;
+            if (btnAnexo) btnAnexo.disabled = false;
             input.focus();
             carregarChats();
         }

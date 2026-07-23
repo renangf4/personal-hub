@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+
+{% block title %}{{ tool.nome }} - Personal Hub{% endblock %}
+
+{% block content %}
+<nav aria-label="breadcrumb" class="mb-3">
+    <ol class="breadcrumb mb-0">
+        <li class="breadcrumb-item"><a href="/">Inicio</a></li>
+        <li class="breadcrumb-item active" aria-current="page">{{ tool.nome }}</li>
+    </ol>
+</nav>
+
+<div class="page-head justify-content-between">
+    <div class="d-flex align-items-start gap-3">
+        <a href="/" class="btn btn-outline-secondary page-head__back" title="Voltar">
+            <i class="bi bi-chevron-left"></i>
+        </a>
+        <div>
+            <h1 class="hub-title h4 mb-1"><i class="bi {{ tool.icone }} me-2 text-primary"></i>{{ tool.nome }}</h1>
+            <p class="hub-subtitle mb-0">{{ tool.descricao }}</p>
+        </div>
+    </div>
+</div>
+
+<div class="card hub-card mb-4">
+    <div class="card-body p-4">
+        <div class="mb-3">
+            <label class="form-label">Dominio ou IP</label>
+            <div class="input-group">
+                <input type="text" class="form-control" id="rede-alvo" placeholder="exemplo.com ou 8.8.8.8" autocomplete="off">
+                <button type="button" class="btn btn-primary" id="rede-btn-tudo">
+                    <i class="bi bi-search"></i> Consultar
+                </button>
+            </div>
+            <small class="text-secondary">Marque as fontes e clique em Consultar.</small>
+            <div class="small text-secondary mt-2" id="rede-meu-ip">
+                <i class="bi bi-eye me-1"></i>
+                Seu IP publico nestas consultas:
+                <code id="rede-meu-ip-valor">…</code>
+            </div>
+        </div>
+
+        <div class="d-flex flex-wrap gap-2 mb-3" id="rede-acoes">
+            <button type="button" class="btn btn-sm btn-primary" data-rede-acao="dns" aria-pressed="true">DNS</button>
+            <button type="button" class="btn btn-sm btn-primary" data-rede-acao="whois" aria-pressed="true">Whois</button>
+            <button type="button" class="btn btn-sm btn-primary" data-rede-acao="ip" aria-pressed="true">IP / Geo</button>
+            <button type="button" class="btn btn-sm btn-outline-primary" data-rede-acao="shodan" aria-pressed="false">Shodan</button>
+        </div>
+
+        <div class="mb-3 d-none" id="rede-shodan-wrap">
+            <label class="form-label">API key Shodan</label>
+            <div class="input-group">
+                <input type="password" class="form-control" id="rede-shodan-key"
+                       placeholder="Cole sua key (salva local)" value="{{ shodan_key or '' }}" autocomplete="off">
+                <button type="button" class="btn btn-outline-secondary" id="rede-btn-salvar-shodan">
+                    Salvar
+                </button>
+            </div>
+            <small class="text-secondary">
+                Gratis em
+                <a href="https://account.shodan.io/" target="_blank" rel="noopener">account.shodan.io</a>
+            </small>
+        </div>
+
+        <div id="rede-status" class="d-none alert alert-info py-2 mb-3">
+            <div class="d-flex align-items-center">
+                <div class="spinner-border spinner-border-sm me-2" role="status"></div>
+                <span>Consultando...</span>
+            </div>
+        </div>
+        <div id="rede-erro" class="d-none alert alert-danger py-2 mb-3"></div>
+    </div>
+</div>
+
+<div id="rede-resultados" class="d-none">
+    <div class="card hub-card mb-4 d-none" id="rede-card-dns">
+        <div class="card-body p-4">
+            <h2 class="h6 text-secondary text-uppercase mb-3 hub-section-label">DNS</h2>
+            <div id="rede-out-dns"></div>
+        </div>
+    </div>
+    <div class="card hub-card mb-4 d-none" id="rede-card-whois">
+        <div class="card-body p-4">
+            <h2 class="h6 text-secondary text-uppercase mb-3 hub-section-label">Whois</h2>
+            <div id="rede-out-whois"></div>
+        </div>
+    </div>
+    <div class="card hub-card mb-4 d-none" id="rede-card-ip">
+        <div class="card-body p-4">
+            <h2 class="h6 text-secondary text-uppercase mb-3 hub-section-label">IP / Geo</h2>
+            <div id="rede-out-ip"></div>
+        </div>
+    </div>
+    <div class="card hub-card mb-4 d-none" id="rede-card-shodan">
+        <div class="card-body p-4">
+            <h2 class="h6 text-secondary text-uppercase mb-3 hub-section-label">Shodan</h2>
+            <div id="rede-out-shodan"></div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/rede_lookup.js"></script>
+{% endblock %}

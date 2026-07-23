@@ -58,6 +58,14 @@ def init_db() -> None:
             )
             """
         )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS hub_settings (
+                chave TEXT PRIMARY KEY,
+                valor TEXT NOT NULL
+            )
+            """
+        )
         conn.commit()
         _migrar_extras_legado(conn)
 
@@ -167,6 +175,28 @@ def remover_senha(senha_id: int) -> None:
 
 def senhas_como_lista() -> list[str]:
     return [s["senha"] for s in listar_senhas()]
+
+
+def obter_setting(chave: str, padrao: str = "") -> str:
+    init_db()
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT valor FROM hub_settings WHERE chave = ?",
+            (chave,),
+        ).fetchone()
+        return str(row["valor"]) if row else padrao
+
+
+def salvar_setting(chave: str, valor: str) -> None:
+    init_db()
+    with get_conn() as conn:
+        conn.execute(
+            """
+            INSERT INTO hub_settings (chave, valor) VALUES (?, ?)
+            ON CONFLICT(chave) DO UPDATE SET valor = excluded.valor
+            """,
+            (chave, valor or ""),
+        )
 
 
 def criar_chat(titulo: str = "Nova conversa") -> dict:

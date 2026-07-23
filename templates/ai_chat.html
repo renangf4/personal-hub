@@ -146,8 +146,16 @@
         </div>
 
         <form class="ai-chat__composer" id="ai-form">
-            <textarea id="ai-input" class="form-control" rows="2"
-                placeholder="Faca uma pergunta tecnica (Shift+Enter para nova linha)..."></textarea>
+            <div class="ai-chat__composer-main">
+                <div id="ai-anexos" class="ai-chat__anexos d-none"></div>
+                <textarea id="ai-input" class="form-control" rows="2"
+                    placeholder="Pergunte, cole arquivo (Ctrl+V) ou anexe PDF/codigo..."></textarea>
+            </div>
+            <input type="file" id="ai-file" class="d-none" multiple
+                accept=".pdf,.txt,.md,.json,.csv,.xml,.html,.css,.js,.ts,.tsx,.jsx,.py,.php,.go,.rs,.java,.sql,.yml,.yaml,.toml,.log,.env,.sh,.bat,.ps1,text/*,application/pdf,application/json">
+            <button type="button" class="btn btn-outline-secondary" id="ai-btn-anexo" title="Anexar arquivo">
+                <i class="bi bi-paperclip"></i>
+            </button>
             <button type="submit" class="btn btn-primary" id="ai-btn-enviar">
                 <i class="bi bi-send"></i>
             </button>

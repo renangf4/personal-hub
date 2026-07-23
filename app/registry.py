@@ -151,7 +151,7 @@ def home_itens() -> list[dict]:
         itens.append({**CATEGORIAS["video"], "href": "/categoria/video", "escopo": "video"})
     if "imagem" in CATEGORIAS:
         itens.append({**CATEGORIAS["imagem"], "href": "/categoria/imagem", "escopo": "imagem"})
-    for slug in ("wp-screenshot", "unlock-pdf", "ai-chat"):
+    for slug in ("wp-screenshot", "unlock-pdf", "ai-chat", "rede-lookup"):
         if slug in TOOLS:
             itens.append({**TOOLS[slug], "href": f"/tool/{slug}", "escopo": slug})
 

@@ -501,6 +501,22 @@ body {
     color: var(--hub-blue);
 }
 
+.loja-pkgs__item {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin-bottom: 0.25rem;
+}
+
+.loja-pkgs__item:last-child {
+    margin-bottom: 0;
+}
+
+.loja-pkgs__item .bi {
+    flex-shrink: 0;
+    opacity: 0.75;
+}
+
 .loja-log {
     max-height: 10rem;
     overflow: auto;
@@ -538,4 +554,15 @@ code {
 .progress-bar {
     background: var(--hub-blue);
     width: 0%;
+}
+
+.rede-whois-raw {
+    max-height: 280px;
+    overflow: auto;
+    padding: .75rem;
+    border-radius: .65rem;
+    background: #12161e;
+    border: 1px solid var(--hub-border-strong, rgba(255, 255, 255, 0.1));
+    white-space: pre-wrap;
+    word-break: break-word;
 }

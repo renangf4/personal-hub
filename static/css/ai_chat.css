@@ -423,11 +423,58 @@ body.page-ai-chat #ai-gate {
     padding: .75rem;
     border-top: 1px solid var(--bs-border-color);
     background: var(--bs-tertiary-bg);
+    align-items: flex-end;
+}
+
+.ai-chat__composer-main {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: .4rem;
 }
 
 .ai-chat__composer textarea {
     resize: none;
     max-height: 200px;
+}
+
+.ai-chat__anexos {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .35rem;
+}
+
+.ai-chat__anexo-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: .35rem;
+    font-size: .75rem;
+    padding: .2rem .45rem;
+    border-radius: .45rem;
+    background: rgba(10, 132, 255, 0.16);
+    border: 1px solid rgba(10, 132, 255, 0.35);
+    max-width: 100%;
+}
+
+.ai-chat__anexo-chip span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 14rem;
+}
+
+.ai-chat__anexo-chip button {
+    border: 0;
+    background: transparent;
+    color: inherit;
+    padding: 0;
+    line-height: 1;
+    opacity: .75;
+}
+
+.ai-chat__anexo-chip button:hover {
+    opacity: 1;
 }
 
 .ai-chat__empty {
