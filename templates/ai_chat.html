@@ -1,9 +1,10 @@
 {% extends "base.html" %}
 
 {% block title %}{{ tool.nome }} - Personal Hub{% endblock %}
+{% block body_class %}page-ai-chat{% endblock %}
 
 {% block content %}
-<div class="d-flex align-items-center mb-3">
+<div class="d-flex align-items-center mb-3 ai-chat-page__topo">
     <a href="/" class="btn btn-sm btn-outline-secondary me-3">
         <i class="bi bi-arrow-left"></i>
     </a>
@@ -85,8 +86,8 @@
                 </small>
             </div>
             <div class="d-flex gap-2">
-                <button id="ai-btn-gerenciar" class="btn btn-sm btn-outline-secondary" title="Gerenciar modelos">
-                    <i class="bi bi-hdd-stack"></i>
+                <button id="ai-btn-gerenciar" class="btn btn-sm btn-outline-secondary" title="Configurar modelos">
+                    <i class="bi bi-hdd-stack me-1"></i> Configurar Modelos
                 </button>
                 <button id="ai-btn-renomear" class="btn btn-sm btn-outline-secondary d-none" title="Renomear">
                     <i class="bi bi-pencil"></i>
@@ -123,14 +124,14 @@
         <div class="ai-chat__mensagens" id="ai-mensagens">
             <div class="ai-chat__empty text-secondary text-center py-5">
                 <i class="bi bi-chat-square-dots display-6 d-block mb-2"></i>
-                Crie uma nova conversa para comecar.
+                Envie sua primeira mensagem.
             </div>
         </div>
 
         <form class="ai-chat__composer" id="ai-form">
             <textarea id="ai-input" class="form-control" rows="2"
-                placeholder="Faca uma pergunta tecnica (Shift+Enter para nova linha)..." disabled></textarea>
-            <button type="submit" class="btn btn-primary" id="ai-btn-enviar" disabled>
+                placeholder="Faca uma pergunta tecnica (Shift+Enter para nova linha)..."></textarea>
+            <button type="submit" class="btn btn-primary" id="ai-btn-enviar">
                 <i class="bi bi-send"></i>
             </button>
         </form>

@@ -1,9 +1,42 @@
+body.page-ai-chat {
+    display: flex;
+    flex-direction: column;
+    height: 100dvh;
+    overflow: hidden;
+}
+
+body.page-ai-chat .navbar {
+    flex-shrink: 0;
+    margin-bottom: 0 !important;
+}
+
+body.page-ai-chat main.container {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    padding-top: 1rem;
+    padding-bottom: 1rem !important;
+    overflow: hidden;
+}
+
+body.page-ai-chat .ai-chat-page__topo {
+    flex-shrink: 0;
+}
+
+body.page-ai-chat #ai-gate {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    margin-bottom: 0 !important;
+}
+
 .ai-chat {
     display: grid;
     grid-template-columns: 280px 1fr;
     gap: 1rem;
-    height: calc(100vh - 200px);
-    min-height: 520px;
+    flex: 1;
+    min-height: 0;
 }
 
 .ai-chat__sidebar {
@@ -372,12 +405,12 @@
 @media (max-width: 768px) {
     .ai-chat {
         grid-template-columns: 1fr;
-        height: auto;
+        grid-template-rows: 180px 1fr;
     }
     .ai-chat__sidebar {
-        max-height: 220px;
+        max-height: none;
     }
     .ai-chat__main {
-        min-height: 480px;
+        min-height: 0;
     }
 }

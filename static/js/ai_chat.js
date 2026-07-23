@@ -126,7 +126,7 @@
 
             setStatus('ok', 'Pronto');
             if (modoGerenciar) {
-                mostrarGate('Gerenciar modelos',
+                mostrarGate('Configurar modelos',
                     'Baixe novos modelos ou remova os que nao usa mais para liberar espaco.',
                     { presets: true, presetsData: data.presets, gerenciar: true, voltar: true }
                 );
@@ -318,7 +318,7 @@
         btnGerenciar.addEventListener('click', async () => {
             await verificarStatus();
             if (!ultimoStatus || !ultimoStatus.ollama_ativo) return;
-            mostrarGate('Gerenciar modelos',
+            mostrarGate('Configurar modelos',
                 'Baixe novos modelos ou remova os que nao usa mais para liberar espaco.',
                 { presets: true, presetsData: ultimoStatus.presets, gerenciar: true, voltar: true }
             );
@@ -505,10 +505,35 @@
         try {
             const resp = await fetch('/api/ai/chats');
             const data = await resp.json();
-            renderListaChats(data.chats || []);
+            const chats = data.chats || [];
+            renderListaChats(chats);
+            await garantirConversaAtiva(chats);
         } catch (err) {
             listaChats.innerHTML = `<div class="text-danger small">Erro ao carregar</div>`;
         }
+    }
+
+    async function criarNovaConversa() {
+        const resp = await fetch('/api/ai/chats', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ titulo: 'Nova conversa' }),
+        });
+        const data = await resp.json();
+        await abrirChat(data.chat.id);
+        const listaResp = await fetch('/api/ai/chats');
+        const listaData = await listaResp.json();
+        renderListaChats(listaData.chats || []);
+    }
+
+    async function garantirConversaAtiva(chats) {
+        if (chatAtual) return;
+        const rascunho = (chats || []).find(c => !c.total_mensagens);
+        if (rascunho) {
+            await abrirChat(rascunho.id);
+            return;
+        }
+        await criarNovaConversa();
     }
 
     function renderListaChats(chats) {
@@ -535,7 +560,6 @@
             await fetch(`/api/ai/chats/${id}`, { method: 'DELETE' });
             if (chatAtual && chatAtual.id === id) {
                 chatAtual = null;
-                resetarPainelMensagens();
             }
             carregarChats();
             return;
@@ -548,14 +572,7 @@
     });
 
     btnNovoChat.addEventListener('click', async () => {
-        const resp = await fetch('/api/ai/chats', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ titulo: 'Nova conversa' }),
-        });
-        const data = await resp.json();
-        await carregarChats();
-        abrirChat(data.chat.id);
+        await criarNovaConversa();
     });
 
     btnRenomear.addEventListener('click', async () => {
@@ -578,7 +595,6 @@
         if (!confirm('Excluir esta conversa?')) return;
         await fetch(`/api/ai/chats/${chatAtual.id}`, { method: 'DELETE' });
         chatAtual = null;
-        resetarPainelMensagens();
         carregarChats();
     });
 
@@ -602,23 +618,30 @@
                         Envie sua primeira mensagem.
                     </div>`;
             }
-            carregarChats();
+            renderListaChatsAtiva();
             input.focus();
         } catch (err) {
             alert('Erro ao abrir conversa: ' + err.message);
         }
     }
 
+    function renderListaChatsAtiva() {
+        listaChats.querySelectorAll('.ai-chat__item').forEach((el) => {
+            const id = parseInt(el.dataset.id, 10);
+            el.classList.toggle('ai-chat__item--ativo', chatAtual && chatAtual.id === id);
+        });
+    }
+
     function resetarPainelMensagens() {
-        tituloEl.textContent = 'Selecione uma conversa';
+        tituloEl.textContent = 'Nova conversa';
         btnRenomear.classList.add('d-none');
         btnExcluir.classList.add('d-none');
-        input.disabled = true;
-        btnEnviar.disabled = true;
+        input.disabled = false;
+        btnEnviar.disabled = false;
         mensagensEl.innerHTML = `
             <div class="ai-chat__empty text-secondary text-center py-5">
                 <i class="bi bi-chat-square-dots display-6 d-block mb-2"></i>
-                Crie uma nova conversa para comecar.
+                Envie sua primeira mensagem.
             </div>`;
     }
 
