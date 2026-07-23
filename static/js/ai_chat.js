@@ -34,6 +34,7 @@
     const LS_MODELO = 'ai_chat_modelo';
     const LS_CTX = 'ai_chat_num_ctx';
     let chatAtual = null;
+    let chatsCache = [];
     let enviando = false;
     let ultimoStatus = null;
     let modoGerenciar = false;
@@ -259,9 +260,12 @@
         const padraoCtx = padrao || CTX_PADRAO;
         const salvo = parseInt(localStorage.getItem(LS_CTX) || '', 10);
         ctxSelect.innerHTML = lista.map((c) => {
-            const marca = c.indicado ? ' ★' : '';
-            const tip = [c.descricao, c.ram].filter(Boolean).join(' · ');
-            return `<option value="${c.tokens}" title="${escapeHtml(tip)}">${escapeHtml(c.label)}${marca} — ${escapeHtml(c.nome)}</option>`;
+            const tip = c.descricao || '';
+            const ram = c.ram ? ` (${c.ram})` : '';
+            const texto = c.indicado
+                ? `${c.label} — Recomendado${ram}`
+                : `${c.label} — ${c.nome}${ram}`;
+            return `<option value="${c.tokens}" title="${escapeHtml(tip)}">${escapeHtml(texto)}</option>`;
         }).join('');
         const valido = lista.find(c => c.tokens === salvo);
         ctxSelect.value = String(valido ? salvo : padraoCtx);
@@ -501,13 +505,30 @@
         }
     }
 
+    function soUmaNovaConversa() {
+        if (chatsCache.length !== 1) return false;
+        const c = chatsCache[0];
+        return c.titulo === 'Nova conversa' || !c.total_mensagens;
+    }
+
+    function atualizarVisibilidadeExcluir() {
+        if (!btnExcluir) return;
+        if (chatAtual && !soUmaNovaConversa()) {
+            btnExcluir.classList.remove('d-none');
+        } else {
+            btnExcluir.classList.add('d-none');
+        }
+    }
+
     async function carregarChats() {
         try {
             const resp = await fetch('/api/ai/chats');
             const data = await resp.json();
             const chats = data.chats || [];
+            chatsCache = chats;
             renderListaChats(chats);
             await garantirConversaAtiva(chats);
+            atualizarVisibilidadeExcluir();
         } catch (err) {
             listaChats.innerHTML = `<div class="text-danger small">Erro ao carregar</div>`;
         }
@@ -523,7 +544,9 @@
         await abrirChat(data.chat.id);
         const listaResp = await fetch('/api/ai/chats');
         const listaData = await listaResp.json();
-        renderListaChats(listaData.chats || []);
+        chatsCache = listaData.chats || [];
+        renderListaChats(chatsCache);
+        atualizarVisibilidadeExcluir();
     }
 
     async function garantirConversaAtiva(chats) {
@@ -541,12 +564,14 @@
             listaChats.innerHTML = `<div class="text-secondary small text-center py-3">Sem conversas ainda.</div>`;
             return;
         }
+        const ocultarExcluir = soUmaNovaConversa();
         listaChats.innerHTML = chats.map((c) => `
             <div class="ai-chat__item ${chatAtual && chatAtual.id === c.id ? 'ai-chat__item--ativo' : ''}" data-id="${c.id}">
                 <span class="ai-chat__item-titulo" title="${escapeHtml(c.titulo)}">${escapeHtml(c.titulo)}</span>
+                ${ocultarExcluir ? '' : `
                 <button class="ai-chat__item-acao" data-acao="excluir" data-id="${c.id}" title="Excluir">
                     <i class="bi bi-x-lg"></i>
-                </button>
+                </button>`}
             </div>
         `).join('');
     }
@@ -606,7 +631,7 @@
             chatAtual = data.chat;
             tituloEl.textContent = chatAtual.titulo;
             btnRenomear.classList.remove('d-none');
-            btnExcluir.classList.remove('d-none');
+            atualizarVisibilidadeExcluir();
             input.disabled = false;
             btnEnviar.disabled = false;
             mensagensEl.innerHTML = '';
@@ -790,4 +815,10 @@
     });
 
     verificarStatus();
+
+    window.aiRecarregarAposLimpar = function () {
+        chatAtual = null;
+        resetarPainelMensagens();
+        carregarChats();
+    };
 })();

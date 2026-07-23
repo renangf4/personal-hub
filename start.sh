@@ -8,9 +8,11 @@ if [ ! -d "venv" ]; then
     python3 -m venv venv
     # shellcheck disable=SC1091
     source venv/bin/activate
-    echo "Instalando dependencias..."
+    echo "Instalando nucleo..."
     python -m pip install --upgrade pip
     pip install -r requirements.txt
+    echo
+    echo "Nucleo pronto. Instale ferramentas em http://localhost:7777/loja"
 else
     # shellcheck disable=SC1091
     source venv/bin/activate

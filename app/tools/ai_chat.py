@@ -22,7 +22,7 @@ CONTEXTOS = [
         "nome": "Perguntas curtas",
         "descricao": "Pouco uso de RAM. Historico curto.",
         "indicado": False,
-        "ram": "~baixo",
+        "ram": "baixo",
     },
     {
         "tokens": 8192,
@@ -30,7 +30,7 @@ CONTEXTOS = [
         "nome": "Uso leve",
         "descricao": "Chat simples e trechos pequenos de codigo.",
         "indicado": False,
-        "ram": "~baixo",
+        "ram": "baixo",
     },
     {
         "tokens": 16384,
@@ -38,7 +38,7 @@ CONTEXTOS = [
         "nome": "Codigo moderado",
         "descricao": "Arquivos medios. Bom em 8 GB RAM.",
         "indicado": False,
-        "ram": "~8 GB+",
+        "ram": "8 GB",
     },
     {
         "tokens": 32768,
@@ -46,7 +46,7 @@ CONTEXTOS = [
         "nome": "Recomendado",
         "descricao": "Codigo + historico. Equilibrio ideal.",
         "indicado": True,
-        "ram": "~16 GB+",
+        "ram": "16 GB",
     },
     {
         "tokens": 65536,
@@ -54,7 +54,7 @@ CONTEXTOS = [
         "nome": "Logs / multi-arquivo",
         "descricao": "Logs grandes e varios arquivos juntos.",
         "indicado": False,
-        "ram": "~16 GB+",
+        "ram": "16 GB+",
     },
     {
         "tokens": 131072,
@@ -62,7 +62,7 @@ CONTEXTOS = [
         "nome": "Contexto maximo",
         "descricao": "Projetos grandes. Exige muita RAM/VRAM.",
         "indicado": False,
-        "ram": "~32 GB+",
+        "ram": "32 GB+",
     },
 ]
 

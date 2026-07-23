@@ -1,26 +1,48 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div class="mb-4">
-    <h1 class="h3 mb-1">Bem-vindo</h1>
-    <p class="text-secondary mb-0">Escolha uma ferramenta para comecar.</p>
+<div class="d-flex flex-wrap justify-content-between align-items-end gap-3 mb-4">
+    <div>
+        <span class="hub-kicker">Local</span>
+        <h1 class="hub-title h2 mb-1">Seu hub</h1>
+        <p class="hub-subtitle mb-0">Ferramentas privadas no seu computador. Arraste para reordenar.</p>
+    </div>
+    <a href="/loja" class="btn btn-primary">
+        <i class="bi bi-bag-plus me-1"></i>Loja
+        {% if extras_disponiveis %}
+        <span class="badge text-bg-primary ms-1">{{ extras_disponiveis }}</span>
+        {% endif %}
+    </a>
 </div>
 
-<div class="row g-3">
+{% if not tools %}
+<div class="hub-empty d-flex flex-wrap align-items-center justify-content-between gap-3">
+    <div>
+        <strong class="d-block mb-1">Nenhuma ferramenta ainda</strong>
+        <span class="hub-subtitle">Instale o que precisar na Loja.</span>
+    </div>
+    <a href="/loja" class="btn btn-primary btn-sm">Abrir Loja</a>
+</div>
+{% else %}
+<div class="row g-3 g-lg-4" id="hub-tools-grid">
     {% for tool in tools %}
-    <div class="col-12 col-sm-6 col-lg-4">
-        <a href="{{ tool.href }}" class="text-decoration-none">
-            <div class="card h-100 tool-card">
-                <div class="card-body">
-                    <div class="d-flex align-items-center mb-2">
-                        <i class="bi {{ tool.icone }} fs-3 me-3 text-primary"></i>
-                        <h5 class="card-title mb-0">{{ tool.nome }}</h5>
-                    </div>
-                    <p class="card-text text-secondary small mb-0">{{ tool.descricao }}</p>
+    <div class="col-12 col-sm-6 col-lg-4 hub-tool-col" data-slug="{{ tool.escopo }}">
+        <a href="{{ tool.href }}" class="text-decoration-none text-body d-block h-100 hub-tool-link">
+            <div class="card h-100 tool-card tool-card--home hub-card">
+                <div class="card-body tool-card__body">
+                    <span class="tool-card__icon tool-card__icon--home"><i class="bi {{ tool.icone }}"></i></span>
+                    <h2 class="h5 mb-2 fw-semibold">{{ tool.nome }}</h2>
+                    <p class="card-text text-secondary small mb-0 lh-sm">{{ tool.descricao }}</p>
                 </div>
             </div>
         </a>
     </div>
     {% endfor %}
 </div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.6/Sortable.min.js"></script>
+<script src="/static/js/home.js"></script>
 {% endblock %}

@@ -42,7 +42,91 @@ def init_db() -> None:
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_ai_mensagens_chat ON ai_mensagens(chat_id, id)"
         )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS extras_instalados (
+                slug TEXT PRIMARY KEY,
+                instalado_em TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS home_ordem (
+                slug TEXT PRIMARY KEY,
+                posicao INTEGER NOT NULL
+            )
+            """
+        )
         conn.commit()
+        _migrar_extras_legado(conn)
+
+
+def _import_ok(nome: str) -> bool:
+    try:
+        import importlib
+        importlib.import_module(nome)
+        return True
+    except ImportError:
+        return False
+
+
+def _migrar_extras_legado(conn: sqlite3.Connection) -> None:
+    """Se ja havia pacotes instalados antes do controle por Loja, marca os extras."""
+    total = conn.execute("SELECT COUNT(*) FROM extras_instalados").fetchone()[0]
+    if total:
+        return
+    from .extras import EXTRAS
+    for slug, extra in EXTRAS.items():
+        if all(_import_ok(nome) for nome in extra["imports"]):
+            conn.execute(
+                "INSERT OR IGNORE INTO extras_instalados (slug) VALUES (?)",
+                (slug,),
+            )
+    conn.commit()
+
+
+def listar_extras_instalados() -> set[str]:
+    init_db()
+    with get_conn() as conn:
+        rows = conn.execute("SELECT slug FROM extras_instalados").fetchall()
+        return {r["slug"] for r in rows}
+
+
+def marcar_extra(slug: str) -> None:
+    init_db()
+    with get_conn() as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO extras_instalados (slug, instalado_em) VALUES (?, datetime('now'))",
+            (slug,),
+        )
+
+
+def desmarcar_extra(slug: str) -> None:
+    init_db()
+    with get_conn() as conn:
+        conn.execute("DELETE FROM extras_instalados WHERE slug = ?", (slug,))
+
+
+def listar_ordem_home() -> list[str]:
+    init_db()
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT slug FROM home_ordem ORDER BY posicao ASC, slug ASC"
+        ).fetchall()
+        return [r["slug"] for r in rows]
+
+
+def salvar_ordem_home(slugs: list[str]) -> None:
+    init_db()
+    limpos = [str(s).strip() for s in slugs if str(s).strip()]
+    with get_conn() as conn:
+        conn.execute("DELETE FROM home_ordem")
+        for i, slug in enumerate(limpos):
+            conn.execute(
+                "INSERT INTO home_ordem (slug, posicao) VALUES (?, ?)",
+                (slug, i),
+            )
 
 
 @contextmanager
@@ -135,6 +219,14 @@ def excluir_chat(chat_id: int) -> None:
     with get_conn() as conn:
         conn.execute("DELETE FROM ai_mensagens WHERE chat_id = ?", (chat_id,))
         conn.execute("DELETE FROM ai_chats WHERE id = ?", (chat_id,))
+
+
+def limpar_chats() -> int:
+    with get_conn() as conn:
+        total = conn.execute("SELECT COUNT(*) FROM ai_chats").fetchone()[0]
+        conn.execute("DELETE FROM ai_mensagens")
+        conn.execute("DELETE FROM ai_chats")
+        return int(total)
 
 
 def adicionar_mensagem(chat_id: int, role: str, conteudo: str) -> dict:

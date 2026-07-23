@@ -12,10 +12,12 @@ if not exist "venv\" (
         exit /b 1
     )
 
-    echo Instalando dependencias...
+    echo Instalando nucleo...
     call venv\Scripts\activate.bat
     python -m pip install --upgrade pip
     pip install -r requirements.txt
+    echo.
+    echo Nucleo pronto. Instale ferramentas em http://localhost:7777/loja
 ) else (
     call venv\Scripts\activate.bat
 )

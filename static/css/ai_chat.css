@@ -10,18 +10,50 @@ body.page-ai-chat .navbar {
     margin-bottom: 0 !important;
 }
 
-body.page-ai-chat main.container {
+body.page-ai-chat main.container,
+body.page-ai-chat .hub-main {
     flex: 1;
     min-height: 0;
     display: flex;
     flex-direction: column;
-    padding-top: 1rem;
-    padding-bottom: 1rem !important;
+    padding-top: 1.25rem;
+    padding-bottom: 1.25rem !important;
     overflow: hidden;
 }
 
 body.page-ai-chat .ai-chat-page__topo {
     flex-shrink: 0;
+    margin-bottom: 1rem;
+}
+
+.ai-chat__sidebar,
+.ai-chat__main {
+    background: var(--hub-surface, rgba(22, 27, 36, 0.72));
+    backdrop-filter: blur(16px);
+    border: 1px solid var(--hub-border, rgba(255, 255, 255, 0.08));
+    border-radius: var(--hub-radius, 1rem);
+}
+
+.ai-chat__item {
+    border-radius: 0.65rem;
+}
+
+.ai-chat__item--ativo {
+    background: var(--hub-blue-soft, rgba(10, 132, 255, 0.16));
+    border-color: rgba(10, 132, 255, 0.35);
+}
+
+.ai-chat__header {
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.ai-ctx-info {
+    background: var(--hub-blue-soft, rgba(10, 132, 255, 0.12));
+}
+
+.ai-preset {
+    border-radius: var(--hub-radius-sm, 0.75rem);
+    background: rgba(255, 255, 255, 0.03);
 }
 
 body.page-ai-chat #ai-gate {

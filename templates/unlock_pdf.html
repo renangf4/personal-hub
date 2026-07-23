@@ -3,21 +3,33 @@
 {% block title %}{{ tool.nome }} - Personal Hub{% endblock %}
 
 {% block content %}
-<div class="d-flex align-items-center mb-4">
-    <a href="/" class="btn btn-sm btn-outline-secondary me-3">
-        <i class="bi bi-arrow-left"></i>
-    </a>
-    <div>
-        <h1 class="h4 mb-0"><i class="bi {{ tool.icone }} me-2"></i>{{ tool.nome }}</h1>
-        <small class="text-secondary">{{ tool.descricao }}</small>
+<nav aria-label="breadcrumb" class="mb-3">
+    <ol class="breadcrumb mb-0">
+        <li class="breadcrumb-item"><a href="/">Inicio</a></li>
+        <li class="breadcrumb-item active" aria-current="page">{{ tool.nome }}</li>
+    </ol>
+</nav>
+
+<div class="page-head justify-content-between">
+    <div class="d-flex align-items-start gap-3">
+        <a href="/" class="btn btn-outline-secondary page-head__back" title="Voltar">
+            <i class="bi bi-chevron-left"></i>
+        </a>
+        <div>
+            <h1 class="hub-title h4 mb-1"><i class="bi {{ tool.icone }} me-2 text-primary"></i>{{ tool.nome }}</h1>
+            <p class="hub-subtitle mb-0">{{ tool.descricao }}</p>
+        </div>
     </div>
+    <button type="button" class="btn btn-sm btn-limpar btn-limpar-escopo" data-escopo="{{ tool.slug }}" title="Limpar dados desta ferramenta">
+        <i class="bi bi-trash3"></i> <span class="btn-limpar-escopo-label">Limpar</span>
+    </button>
 </div>
 
 <div class="row g-4">
     <div class="col-12 col-lg-7">
-        <div class="card mb-4">
-            <div class="card-body">
-                <h2 class="h6 text-uppercase text-secondary mb-3">Desbloquear PDFs</h2>
+        <div class="card hub-card mb-4">
+            <div class="card-body p-4">
+                <h2 class="h6 text-secondary text-uppercase mb-3 hub-section-label">Desbloquear PDFs</h2>
                 <form id="form-processar" data-slug="{{ tool.slug }}">
                     <div class="mb-3">
                         <label class="form-label">Arquivos PDF</label>
@@ -44,9 +56,9 @@
     </div>
 
     <div class="col-12 col-lg-5">
-        <div class="card">
-            <div class="card-body">
-                <h2 class="h6 text-uppercase text-secondary mb-3">Senhas salvas</h2>
+        <div class="card hub-card">
+            <div class="card-body p-4">
+                <h2 class="h6 text-uppercase text-secondary mb-3 hub-section-label">Senhas salvas</h2>
 
                 <form id="form-add-senha" class="mb-3">
                     <div class="input-group">

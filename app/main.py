@@ -3,21 +3,21 @@ import shutil
 import time
 import uuid
 from pathlib import Path
-from typing import Literal
 
 from fastapi import Body, FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from . import db
+from . import db, registry, store
 from .cleanup import (
     OUTPUTS_DIR,
     UPLOADS_DIR,
+    escopo_de_slug,
     executar_limpeza,
     info_armazenamento,
+    migrar_sessoes_legado,
 )
-from .tools import ai_chat, convert_mp4, convert_webm, convert_webp, unlock_pdf, wp_screenshot
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 TEMPLATES_DIR = BASE_DIR / "templates"
@@ -27,98 +27,19 @@ app = FastAPI(title="Personal Hub", docs_url=None, redoc_url=None)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
-TOOLS = {
-    "convert-mp4": {
-        "slug": "convert-mp4",
-        "nome": "Converter para MP4",
-        "descricao": "Converte videos (mov, avi, mkv, webm) para MP4 H.264.",
-        "icone": "bi-film",
-        "aceita": "video/*,.mkv,.mov,.avi,.webm",
-        "controles": "video",
-        "modulo": convert_mp4,
-    },
-    "convert-webm": {
-        "slug": "convert-webm",
-        "nome": "Converter para WebM",
-        "descricao": "Converte videos (mp4, mov, avi, mkv) para WebM VP9.",
-        "icone": "bi-camera-video",
-        "aceita": "video/*,.mkv,.mov,.avi",
-        "controles": "video",
-        "modulo": convert_webm,
-    },
-    "convert-webp": {
-        "slug": "convert-webp",
-        "nome": "Converter para WebP",
-        "descricao": "Converte imagens para WebP.",
-        "icone": "bi-image",
-        "aceita": "image/*",
-        "controles": "webp",
-        "modulo": convert_webp,
-    },
-    "unlock-pdf": {
-        "slug": "unlock-pdf",
-        "nome": "Desbloquear PDF",
-        "descricao": "Remove senha de PDFs usando lista persistente cadastrada.",
-        "icone": "bi-file-earmark-lock",
-        "aceita": ".pdf,application/pdf",
-        "controles": "unlock",
-        "modulo": unlock_pdf,
-    },
-    "wp-screenshot": {
-        "slug": "wp-screenshot",
-        "nome": "Screenshot WordPress",
-        "descricao": "Padroniza imagens em 1200x900 PNG otimizado.",
-        "icone": "bi-window",
-        "aceita": "image/*",
-        "controles": "none",
-        "modulo": wp_screenshot,
-    },
-    "ai-chat": {
-        "slug": "ai-chat",
-        "nome": "Assistente de IA Local",
-        "descricao": "Chat local com Ollama — carteira por foco (codigo, seguranca, geral...).",
-        "icone": "bi-robot",
-        "aceita": "",
-        "controles": "ai",
-        "modulo": ai_chat,
-    },
-}
 
-CATEGORIAS = {
-    "video": {
-        "slug": "video",
-        "nome": "Video",
-        "descricao": "Conversao de videos para MP4 ou WebM.",
-        "icone": "bi-camera-video",
-        "aceita": "video/*,.mkv,.mov,.avi,.webm",
-        "controles": "video",
-        "formatos": [
-            {"slug": "convert-mp4", "label": "MP4 (H.264)", "padrao": True},
-            {"slug": "convert-webm", "label": "WebM (VP9)", "padrao": False},
-        ],
-    },
-    "imagem": {
-        "slug": "imagem",
-        "nome": "Imagem",
-        "descricao": "Conversao de imagens para WebP.",
-        "icone": "bi-image",
-        "aceita": "image/*",
-        "controles": "webp",
-        "formatos": [
-            {"slug": "convert-webp", "label": "WebP", "padrao": True},
-        ],
-    },
-}
+def _ai():
+    mod = registry.modulo("ai_chat")
+    if mod is None:
+        raise HTTPException(status_code=404, detail="Assistente de IA nao instalado. Abra a Loja.")
+    return mod
 
 
-def _home_itens() -> list[dict]:
-    return [
-        {**CATEGORIAS["video"], "href": "/categoria/video"},
-        {**CATEGORIAS["imagem"], "href": "/categoria/imagem"},
-        {**TOOLS["wp-screenshot"], "href": "/tool/wp-screenshot"},
-        {**TOOLS["unlock-pdf"], "href": "/tool/unlock-pdf"},
-        {**TOOLS["ai-chat"], "href": "/tool/ai-chat"},
-    ]
+def _imagem():
+    mod = registry.modulo("convert_image")
+    if mod is None:
+        raise HTTPException(status_code=404, detail="Ferramenta de imagem nao instalada. Abra a Loja.")
+    return mod
 
 
 @app.on_event("startup")
@@ -126,12 +47,14 @@ def _startup() -> None:
     db.init_db()
     UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
     OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
+    migrar_sessoes_legado()
+    registry.rebuild()
 
 
-def _criar_sessao() -> tuple[Path, Path, str]:
+def _criar_sessao(escopo: str) -> tuple[Path, Path, str]:
     sessao_id = f"{int(time.time())}_{uuid.uuid4().hex[:6]}"
-    upload_dir = UPLOADS_DIR / sessao_id
-    output_dir = OUTPUTS_DIR / sessao_id
+    upload_dir = UPLOADS_DIR / escopo / sessao_id
+    output_dir = OUTPUTS_DIR / escopo / sessao_id
     upload_dir.mkdir(parents=True, exist_ok=True)
     output_dir.mkdir(parents=True, exist_ok=True)
     return upload_dir, output_dir, sessao_id
@@ -154,13 +77,55 @@ def _salvar_uploads(arquivos: list[UploadFile], destino: Path) -> list[Path]:
 def index(request: Request):
     return templates.TemplateResponse(
         "index.html",
-        {"request": request, "tools": _home_itens()},
+        {
+            "request": request,
+            "tools": registry.home_itens(),
+            "extras_disponiveis": sum(1 for e in registry.listar_loja() if not e["instalado"]),
+        },
     )
+
+
+@app.post("/api/home/ordem")
+def api_home_ordem(payload: dict = Body(...)):
+    ordem = payload.get("ordem")
+    if not isinstance(ordem, list) or not all(isinstance(x, str) for x in ordem):
+        raise HTTPException(status_code=400, detail="Ordem invalida")
+    db.salvar_ordem_home(ordem)
+    return {"ok": True, "ordem": db.listar_ordem_home()}
+
+
+@app.get("/loja", response_class=HTMLResponse)
+def loja_page(request: Request):
+    return templates.TemplateResponse(
+        "loja.html",
+        {"request": request, "extras": registry.listar_loja()},
+    )
+
+
+@app.get("/api/loja")
+def api_loja_listar():
+    return {"ok": True, "extras": registry.listar_loja()}
+
+
+@app.post("/api/loja/{slug}/instalar")
+async def api_loja_instalar(slug: str):
+    from .extras import EXTRAS
+    if slug not in EXTRAS:
+        raise HTTPException(status_code=404, detail="Extra desconhecido")
+    return StreamingResponse(store.instalar(slug), media_type="application/x-ndjson")
+
+
+@app.post("/api/loja/{slug}/desinstalar")
+async def api_loja_desinstalar(slug: str):
+    from .extras import EXTRAS
+    if slug not in EXTRAS:
+        raise HTTPException(status_code=404, detail="Extra desconhecido")
+    return StreamingResponse(store.desinstalar(slug), media_type="application/x-ndjson")
 
 
 @app.get("/categoria/{slug}", response_class=HTMLResponse)
 def categoria_page(request: Request, slug: str):
-    cat = CATEGORIAS.get(slug)
+    cat = registry.CATEGORIAS.get(slug)
     if not cat:
         raise HTTPException(status_code=404)
     return templates.TemplateResponse(
@@ -176,7 +141,7 @@ def categoria_page(request: Request, slug: str):
 
 @app.get("/tool/{slug}", response_class=HTMLResponse)
 def tool_page(request: Request, slug: str):
-    tool = TOOLS.get(slug)
+    tool = registry.TOOLS.get(slug)
     if not tool:
         raise HTTPException(status_code=404)
 
@@ -187,12 +152,13 @@ def tool_page(request: Request, slug: str):
         )
 
     if slug == "ai-chat":
+        ai = _ai()
         return templates.TemplateResponse(
             "ai_chat.html",
             {
                 "request": request,
                 "tool": tool,
-                "modelo": ai_chat.MODELO_PADRAO,
+                "modelo": ai.MODELO_PADRAO,
                 "chats": db.listar_chats(),
             },
         )
@@ -210,14 +176,14 @@ async def processar(
     max_width: int | None = Form(None),
     quality: int | None = Form(None),
 ):
-    tool = TOOLS.get(slug)
+    tool = registry.TOOLS.get(slug)
     if not tool:
         raise HTTPException(status_code=404)
 
     if slug == "ai-chat":
         raise HTTPException(status_code=400, detail="Use /api/ai/* para o assistente")
 
-    upload_dir, output_dir, sessao_id = _criar_sessao()
+    upload_dir, output_dir, sessao_id = _criar_sessao(escopo_de_slug(slug))
     entradas = _salvar_uploads(arquivos, upload_dir)
 
     if not entradas:
@@ -226,32 +192,48 @@ async def processar(
     largura = max_width if max_width and max_width > 0 else None
     q = quality if quality and quality > 0 else 100
 
-    if slug == "convert-webp":
-        resultados = tool["modulo"].processar(entradas, output_dir, max_width=largura, quality=q)
-    elif slug in ("convert-mp4", "convert-webm"):
-        resultados = tool["modulo"].processar(entradas, output_dir, max_width=largura, quality=q)
+    familia = tool.get("familia")
+    if familia == "imagem":
+        resultados = tool["modulo"].processar(
+            entradas, output_dir, max_width=largura, quality=q, formato=tool["formato"]
+        )
+    elif familia == "video":
+        resultados = tool["modulo"].processar(
+            entradas, output_dir, max_width=largura, quality=q, formato=tool["formato"]
+        )
     elif slug == "unlock-pdf":
         resultados = tool["modulo"].processar(entradas, output_dir, senhas=db.senhas_como_lista())
     else:
         resultados = tool["modulo"].processar(entradas, output_dir)
 
+    escopo = escopo_de_slug(slug)
     for r in resultados:
         if r["ok"] and r["saida"]:
-            r["download_url"] = f"/download/{sessao_id}/{r['saida']}"
+            r["download_url"] = f"/download/{escopo}/{sessao_id}/{r['saida']}"
 
-    return JSONResponse({"sessao_id": sessao_id, "resultados": resultados})
+    return JSONResponse({"sessao_id": sessao_id, "escopo": escopo, "resultados": resultados})
 
 
-@app.post("/api/webp/estimar")
-async def api_webp_estimar(
+@app.post("/api/imagem/estimar")
+async def api_imagem_estimar(
     arquivo: UploadFile = File(...),
     quality: int = Form(100),
     max_width: int | None = Form(None),
+    slug: str = Form("convert-webp"),
 ):
+    tool = registry.TOOLS.get(slug)
+    if not tool or tool.get("familia") != "imagem":
+        raise HTTPException(status_code=400, detail="Formato de imagem invalido")
+    convert_image = _imagem()
     conteudo = await arquivo.read()
     try:
         largura = max_width if max_width and max_width > 0 else None
-        tamanho = convert_webp.estimar(conteudo, max_width=largura, quality=quality)
+        tamanho = convert_image.estimar(
+            conteudo,
+            max_width=largura,
+            quality=quality,
+            formato=tool["formato"],
+        )
         return {
             "ok": True,
             "original": len(conteudo),
@@ -262,6 +244,16 @@ async def api_webp_estimar(
         return JSONResponse(status_code=400, content={"ok": False, "msg": str(e)})
 
 
+@app.post("/api/webp/estimar")
+async def api_webp_estimar(
+    arquivo: UploadFile = File(...),
+    quality: int = Form(100),
+    max_width: int | None = Form(None),
+    slug: str = Form("convert-webp"),
+):
+    return await api_imagem_estimar(arquivo, quality, max_width, slug)
+
+
 @app.post("/api/video/estimar")
 async def api_video_estimar(
     slug: str = Form(...),
@@ -269,28 +261,53 @@ async def api_video_estimar(
     quality: int = Form(100),
     max_width: int | None = Form(None),
 ):
-    if slug not in ("convert-mp4", "convert-webm"):
+    tool = registry.TOOLS.get(slug)
+    if not tool or tool.get("familia") != "video":
         raise HTTPException(status_code=400, detail="Slug invalido")
     conteudo = await arquivo.read()
     largura = max_width if max_width and max_width > 0 else None
-    modulo = TOOLS[slug]["modulo"]
-    resultado = modulo.estimar(
+    resultado = tool["modulo"].estimar(
         conteudo,
         nome_original=arquivo.filename or "video.mp4",
         max_width=largura,
         quality=quality,
+        formato=tool["formato"],
     )
     if not resultado.get("ok"):
         return JSONResponse(status_code=400, content=resultado)
     return resultado
 
 
-@app.get("/download/{sessao_id}/{nome}")
-def download(sessao_id: str, nome: str):
-    caminho = OUTPUTS_DIR / sessao_id / nome
+@app.get("/download/{escopo}/{sessao_id}/{nome}")
+def download(escopo: str, sessao_id: str, nome: str):
+    if ".." in escopo or ".." in sessao_id or ".." in nome:
+        raise HTTPException(status_code=400)
+    caminho = OUTPUTS_DIR / escopo / sessao_id / nome
     if not caminho.is_file():
         raise HTTPException(status_code=404)
     return FileResponse(caminho, filename=nome)
+
+
+@app.get("/api/limpar-info")
+def api_limpar_info():
+    return {"ok": True, **info_armazenamento()}
+
+
+@app.get("/api/limpar-info/{escopo}")
+def api_limpar_info_escopo(escopo: str):
+    return {"ok": True, "escopo": escopo, **info_armazenamento(escopo)}
+
+
+@app.post("/api/limpar-agora")
+def api_limpar_agora():
+    resultado = executar_limpeza()
+    return {"ok": True, **resultado}
+
+
+@app.post("/api/limpar-agora/{escopo}")
+def api_limpar_agora_escopo(escopo: str):
+    resultado = executar_limpeza(escopo)
+    return {"ok": True, "escopo": escopo, **resultado}
 
 
 @app.get("/api/senhas")
@@ -314,70 +331,66 @@ def api_remover_senha(senha_id: int):
     return {"ok": True, "senhas": db.listar_senhas()}
 
 
-@app.get("/api/limpar-info")
-def api_limpar_info():
-    return {"ok": True, **info_armazenamento()}
-
-
-@app.post("/api/limpar-agora")
-def api_limpar_agora():
-    resultado = executar_limpeza()
-    return {"ok": True, **resultado}
-
-
 def _modelo_permitido(modelo: str | None) -> str:
+    ai = _ai()
     if not modelo:
-        return ai_chat.MODELO_PADRAO
-    permitidos = {p["slug"] for p in ai_chat.MODELOS_PRESET}
+        return ai.MODELO_PADRAO
+    permitidos = {p["slug"] for p in ai.MODELOS_PRESET}
     if modelo not in permitidos:
         raise HTTPException(status_code=400, detail="Modelo nao permitido")
     return modelo
 
 
 def _contexto_permitido(num_ctx) -> int:
+    ai = _ai()
     try:
-        valor = int(num_ctx) if num_ctx is not None else ai_chat.CONTEXT_PADRAO
+        valor = int(num_ctx) if num_ctx is not None else ai.CONTEXT_PADRAO
     except (TypeError, ValueError):
-        return ai_chat.CONTEXT_PADRAO
-    if valor not in ai_chat.CONTEXTOS_PERMITIDOS:
+        return ai.CONTEXT_PADRAO
+    if valor not in ai.CONTEXTOS_PERMITIDOS:
         raise HTTPException(status_code=400, detail="Context length invalido")
     return valor
 
 
 @app.get("/api/ai/status")
 async def api_ai_status():
-    info = await ai_chat.verificar_status(ai_chat.MODELO_PADRAO)
+    ai = _ai()
+    info = await ai.verificar_status(ai.MODELO_PADRAO)
     return {"ok": True, **info}
 
 
 @app.post("/api/ai/pull")
 async def api_ai_pull(payload: dict = Body(default_factory=dict)):
+    ai = _ai()
     modelo = _modelo_permitido(payload.get("modelo"))
     return StreamingResponse(
-        ai_chat.stream_pull(modelo),
+        ai.stream_pull(modelo),
         media_type="application/x-ndjson",
     )
 
 
 @app.post("/api/ai/delete")
 async def api_ai_delete(payload: dict = Body(default_factory=dict)):
+    ai = _ai()
     modelo = _modelo_permitido(payload.get("modelo"))
-    resultado = await ai_chat.deletar_modelo(modelo)
+    resultado = await ai.deletar_modelo(modelo)
     status_code = 200 if resultado.get("ok") else 400
     return JSONResponse(status_code=status_code, content=resultado)
 
 
 @app.post("/api/ai/instalar-ollama")
 async def api_ai_instalar_ollama():
+    ai = _ai()
     return StreamingResponse(
-        ai_chat.stream_install_ollama(),
+        ai.stream_install_ollama(),
         media_type="application/x-ndjson",
     )
 
 
 @app.post("/api/ai/iniciar-ollama")
 def api_ai_iniciar_ollama():
-    resultado = ai_chat.iniciar_servico_ollama()
+    ai = _ai()
+    resultado = ai.iniciar_servico_ollama()
     status_code = 200 if resultado.get("ok") else 400
     return JSONResponse(status_code=status_code, content=resultado)
 
@@ -428,6 +441,7 @@ async def api_ai_mensagem(chat_id: int, payload: dict = Body(...)):
     if not conteudo:
         raise HTTPException(status_code=400, detail="Mensagem vazia")
 
+    ai = _ai()
     modelo = _modelo_permitido(payload.get("modelo"))
     num_ctx = _contexto_permitido(payload.get("num_ctx"))
 
@@ -452,7 +466,7 @@ async def api_ai_mensagem(chat_id: int, payload: dict = Body(...)):
         yield (json.dumps({"tipo": "user_msg", "mensagem": msg_user}) + "\n").encode("utf-8")
 
         partes: list[str] = []
-        async for chunk in ai_chat.stream_chat(modelo, historico, num_ctx=num_ctx):
+        async for chunk in ai.stream_chat(modelo, historico, num_ctx=num_ctx):
             if chunk.get("erro"):
                 yield (
                     json.dumps({"tipo": "erro", "msg": chunk.get("msg", "Erro desconhecido")}) + "\n"
