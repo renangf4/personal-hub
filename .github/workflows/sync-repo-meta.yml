@@ -24,11 +24,19 @@ jobs:
 
       - name: Aplicar description, homepage e topics
         env:
-          # Se GITHUB_TOKEN der 403 em topics, crie um PAT classic (public_repo)
-          # ou fine-grained com Administration: Read and write e salve como GH_REPO_META_TOKEN.
-          GH_TOKEN: ${{ secrets.GH_REPO_META_TOKEN || secrets.GITHUB_TOKEN }}
+          # GITHUB_TOKEN nao tem admin — precisa de PAT no secret GH_REPO_META_TOKEN
+          # Classic: scope public_repo | Fine-grained: Administration Read and write neste repo
+          GH_TOKEN: ${{ secrets.GH_REPO_META_TOKEN }}
         run: |
           set -euo pipefail
+
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "::error::Secret GH_REPO_META_TOKEN ausente. O GITHUB_TOKEN da Action nao pode editar About/topics."
+            echo "Crie um PAT e salve em Settings > Secrets and variables > Actions > GH_REPO_META_TOKEN"
+            echo "Classic: public_repo | Fine-grained: Administration (Read and write) no repo personal-hub"
+            exit 1
+          fi
+
           DESC=$(yq -r '.description' .github/repo-meta.yml | tr '\n' ' ' | sed 's/  */ /g' | sed 's/[[:space:]]*$//')
           HOME_URL=$(yq -r '.homepage // ""' .github/repo-meta.yml)
 
