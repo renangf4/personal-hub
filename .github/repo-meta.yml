@@ -4,7 +4,7 @@
 
 description: >-
   Hub local de utilitarios pessoais (FastAPI): midia, PDF, IA com Ollama,
-  DNS/Whois, criptografia AES-GCM e cofre de senhas — so em localhost.
+  DNS/Whois, criptografia AES-GCM e cofre de senhas - so em localhost.
 
 homepage: https://github.com/renangf4/personal-hub
 
@@ -22,5 +22,3 @@ topics:
   - password-manager
   - web-crypto
   - bootstrap
-
-# sync 2026-07-27 15:58
