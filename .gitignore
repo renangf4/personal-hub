@@ -3,7 +3,9 @@ __pycache__/
 *.pyc
 storage/uploads/*
 storage/outputs/*
+storage/vaults/*
 !storage/uploads/.gitkeep
 !storage/outputs/.gitkeep
+!storage/vaults/.gitkeep
 storage/hub.db
 .env

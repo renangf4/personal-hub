@@ -17,6 +17,7 @@ ESCOPO_POR_SLUG = {
 
 ESCOPOS_ARQUIVO = ("video", "imagem", "wp-screenshot", "unlock-pdf")
 ESCOPO_AI = "ai-chat"
+ESCOPO_COFRE = "cofre-senhas"
 
 _SESSAO_RE = re.compile(r"^\d+_[a-f0-9]+$", re.I)
 _VIDEO_EXT = {".mp4", ".webm", ".mkv", ".mov", ".avi", ".m4v"}
@@ -142,10 +143,13 @@ def info_armazenamento(escopo: str | None = None) -> dict:
 
     if escopo is None:
         info = _info_pastas(UPLOADS_DIR, OUTPUTS_DIR)
-        from . import db
+        from . import db, vault_store
         chats = db.listar_chats()
         info["chats"] = len(chats)
         info["mensagens"] = sum(c.get("total_mensagens", 0) for c in chats)
+        cofre = vault_store.info_bytes()
+        info["arquivos"] += cofre["arquivos"]
+        info["bytes"] += cofre["bytes"]
         return info
 
     if escopo == ESCOPO_AI:
@@ -153,6 +157,10 @@ def info_armazenamento(escopo: str | None = None) -> dict:
         chats = db.listar_chats()
         msgs = sum(c.get("total_mensagens", 0) for c in chats)
         return {"arquivos": len(chats), "bytes": 0, "chats": len(chats), "mensagens": msgs}
+
+    if escopo == ESCOPO_COFRE:
+        from . import vault_store
+        return vault_store.info_bytes()
 
     if escopo not in ESCOPOS_ARQUIVO:
         return {"arquivos": 0, "bytes": 0}
@@ -170,14 +178,21 @@ def executar_limpeza(escopo: str | None = None) -> dict:
             a, b = _limpar_pasta(pasta)
             arquivos += a
             bytes_total += b
-        from . import db
+        from . import db, vault_store
         chats = db.limpar_chats()
+        cofre = vault_store.limpar_todos()
+        arquivos += cofre["arquivos"]
+        bytes_total += cofre["bytes"]
         return {"arquivos": arquivos, "bytes": bytes_total, "chats": chats}
 
     if escopo == ESCOPO_AI:
         from . import db
         chats = db.limpar_chats()
         return {"arquivos": 0, "bytes": 0, "chats": chats}
+
+    if escopo == ESCOPO_COFRE:
+        from . import vault_store
+        return vault_store.limpar_todos()
 
     if escopo not in ESCOPOS_ARQUIVO:
         return {"arquivos": 0, "bytes": 0}

@@ -1,0 +1,200 @@
+{% extends "base.html" %}
+
+{% block title %}{{ tool.nome }} - Personal Hub{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="/static/css/cofre.css">
+{% endblock %}
+
+{% block content %}
+<nav aria-label="breadcrumb" class="mb-3">
+    <ol class="breadcrumb mb-0">
+        <li class="breadcrumb-item"><a href="/">Inicio</a></li>
+        <li class="breadcrumb-item active" aria-current="page">{{ tool.nome }}</li>
+    </ol>
+</nav>
+
+<div class="page-head justify-content-between">
+    <div class="d-flex align-items-start gap-3">
+        <a href="/" class="btn btn-outline-secondary page-head__back" title="Voltar">
+            <i class="bi bi-chevron-left"></i>
+        </a>
+        <div>
+            <h1 class="hub-title h4 mb-1"><i class="bi {{ tool.icone }} me-2 text-primary"></i>{{ tool.nome }}</h1>
+            <p class="hub-subtitle mb-0">{{ tool.descricao }}</p>
+        </div>
+    </div>
+    <button type="button" class="btn btn-sm btn-limpar btn-limpar-escopo" data-escopo="{{ tool.slug }}" title="Apagar todos os cofres">
+        <i class="bi bi-trash3"></i> <span class="btn-limpar-escopo-label">Limpar</span>
+    </button>
+</div>
+
+<div class="alert alert-secondary small mb-4">
+    <i class="bi bi-shield-lock me-1"></i>
+    A senha-mestra <strong>nunca</strong> e enviada nem gravada. So o arquivo criptografado fica em disco.
+    Desbloqueio vale so nesta aba; ao recarregar ou bloquear, precisa digitar de novo.
+</div>
+
+{# ——— Lista de cofres ——— #}
+<section class="cofre-lista" id="cofre-view-lista">
+    <div class="d-flex flex-wrap gap-2 mb-3">
+        <button type="button" class="btn btn-primary" id="cofre-btn-novo">
+            <i class="bi bi-plus-lg"></i> Novo cofre
+        </button>
+        <label class="btn btn-outline-secondary mb-0" for="cofre-import-file">
+            <i class="bi bi-upload"></i> Importar
+        </label>
+        <input type="file" id="cofre-import-file" class="d-none" accept=".hubvault,application/json">
+    </div>
+    <div class="cofre-grid" id="cofre-grid"></div>
+    <p class="text-secondary small mt-3 mb-0 d-none" id="cofre-vazio">Nenhum cofre ainda. Crie um ou importe um arquivo <code>.hubvault</code>.</p>
+</section>
+
+{# ——— Cofre aberto ——— #}
+<section class="cofre-aberto d-none" id="cofre-view-aberto">
+    <div class="cofre-toolbar card hub-card mb-3">
+        <div class="card-body py-3 d-flex flex-wrap align-items-center gap-2 justify-content-between">
+            <div class="d-flex align-items-center gap-2 min-w-0">
+                <button type="button" class="btn btn-outline-secondary btn-sm" id="cofre-btn-voltar" title="Bloquear e voltar">
+                    <i class="bi bi-lock"></i>
+                </button>
+                <div class="min-w-0">
+                    <div class="fw-semibold text-truncate" id="cofre-titulo">—</div>
+                    <small class="text-secondary" id="cofre-status">Desbloqueado nesta aba</small>
+                </div>
+            </div>
+            <div class="d-flex flex-wrap gap-2">
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="cofre-btn-export" title="Baixar arquivo">
+                    <i class="bi bi-download"></i> Exportar
+                </button>
+                <button type="button" class="btn btn-sm btn-primary" id="cofre-btn-add">
+                    <i class="bi bi-plus-lg"></i> Entrada
+                </button>
+                <button type="button" class="btn btn-sm btn-outline-danger" id="cofre-btn-excluir-cofre">
+                    <i class="bi bi-trash3"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="mb-3">
+        <input type="search" class="form-control" id="cofre-busca" placeholder="Buscar titulo, usuario, URL...">
+    </div>
+
+    <div class="cofre-entries" id="cofre-entries"></div>
+    <p class="text-secondary small d-none" id="cofre-entries-vazio">Nenhuma entrada. Adicione a primeira.</p>
+</section>
+
+{# Modal: criar #}
+<div class="modal fade" id="cofre-modal-novo" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title h5">Novo cofre</h2>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label" for="cofre-novo-nome">Nome</label>
+                    <input type="text" class="form-control" id="cofre-novo-nome" maxlength="80" placeholder="Ex.: Pessoal">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label" for="cofre-novo-senha">Senha-mestra</label>
+                    <div class="input-group">
+                        <input type="password" class="form-control" id="cofre-novo-senha" autocomplete="new-password">
+                        <button type="button" class="btn btn-outline-secondary js-cofre-toggle" data-target="cofre-novo-senha"><i class="bi bi-eye"></i></button>
+                    </div>
+                </div>
+                <div class="mb-0">
+                    <label class="form-label" for="cofre-novo-senha2">Confirmar senha</label>
+                    <input type="password" class="form-control" id="cofre-novo-senha2" autocomplete="new-password">
+                </div>
+                <div class="alert py-2 px-3 small mb-0 mt-3 d-none" id="cofre-novo-forca" role="status"></div>
+                <div class="alert alert-danger small mt-3 d-none mb-0" id="cofre-novo-erro"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-primary" id="cofre-novo-salvar">Criar</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{# Modal: desbloquear #}
+<div class="modal fade" id="cofre-modal-unlock" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title h5">Desbloquear <span id="cofre-unlock-nome"></span></h2>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+            </div>
+            <div class="modal-body">
+                <label class="form-label" for="cofre-unlock-senha">Senha-mestra</label>
+                <div class="input-group">
+                    <input type="password" class="form-control" id="cofre-unlock-senha" autocomplete="current-password">
+                    <button type="button" class="btn btn-outline-secondary js-cofre-toggle" data-target="cofre-unlock-senha"><i class="bi bi-eye"></i></button>
+                </div>
+                <div class="alert alert-danger small mt-3 d-none mb-0" id="cofre-unlock-erro"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-primary" id="cofre-unlock-ok">Desbloquear</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{# Modal: entrada #}
+<div class="modal fade" id="cofre-modal-entrada" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title h5" id="cofre-entrada-titulo-modal">Entrada</h2>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="cofre-entrada-id">
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label" for="cofre-entrada-titulo">Titulo</label>
+                        <input type="text" class="form-control" id="cofre-entrada-titulo">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label" for="cofre-entrada-url">URL</label>
+                        <input type="url" class="form-control" id="cofre-entrada-url" placeholder="https://">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label" for="cofre-entrada-usuario">Usuario</label>
+                        <input type="text" class="form-control" id="cofre-entrada-usuario" autocomplete="off">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label" for="cofre-entrada-senha">Senha</label>
+                        <div class="input-group">
+                            <input type="password" class="form-control" id="cofre-entrada-senha" autocomplete="new-password">
+                            <button type="button" class="btn btn-outline-secondary js-cofre-toggle" data-target="cofre-entrada-senha"><i class="bi bi-eye"></i></button>
+                            <button type="button" class="btn btn-outline-secondary" id="cofre-entrada-gerar" title="Gerar senha"><i class="bi bi-shuffle"></i></button>
+                        </div>
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label" for="cofre-entrada-notas">Notas</label>
+                        <textarea class="form-control" id="cofre-entrada-notas" rows="3"></textarea>
+                    </div>
+                </div>
+                <div class="alert alert-danger small mt-3 d-none mb-0" id="cofre-entrada-erro"></div>
+            </div>
+            <div class="modal-footer justify-content-between">
+                <button type="button" class="btn btn-outline-danger d-none" id="cofre-entrada-excluir">Excluir</button>
+                <div class="d-flex gap-2 ms-auto">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="button" class="btn btn-primary" id="cofre-entrada-salvar">Salvar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/crypto_gcm.js"></script>
+<script src="/static/js/cofre_senhas.js"></script>
+{% endblock %}

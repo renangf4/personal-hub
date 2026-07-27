@@ -13,6 +13,7 @@ Instale sob demanda pela **Loja** (`/loja`):
 - **Assistente de IA Local** — chat com Ollama; anexos de arquivo/PDF; carteiras por foco
 - **DNS e Whois** — DNS (incl. SPF/DMARC/CAA), Whois, IP/geo, HTTP/TLS, portas, ping/traceroute, crt.sh, RBL, Shodan / AbuseIPDB / VirusTotal (keys opcionais)
 - **Criptografar / Descriptografar** — AES-256-GCM no navegador (compativel com [gcm-encrypt-decrypt](https://github.com/renangf4/gcm-encrypt-decrypt))
+- **Cofre de senhas** — arquivo `.hubvault` criptografado no navegador; importar / exportar / excluir; senha-mestra nunca gravada
 
 ## Requisitos
 

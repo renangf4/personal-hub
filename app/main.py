@@ -183,6 +183,12 @@ def tool_page(request: Request, slug: str):
             {"request": request, "tool": tool},
         )
 
+    if slug == "cofre-senhas":
+        return templates.TemplateResponse(
+            "cofre_senhas.html",
+            {"request": request, "tool": tool},
+        )
+
     return templates.TemplateResponse(
         "tool.html",
         {"request": request, "tool": tool, "controles": tool.get("controles", "none")},
@@ -385,6 +391,62 @@ def api_adicionar_senha(senha: str = Form(...)):
 def api_remover_senha(senha_id: int):
     db.remover_senha(senha_id)
     return {"ok": True, "senhas": db.listar_senhas()}
+
+
+def _cofre_ok():
+    if not registry.extra_instalado("cofre"):
+        raise HTTPException(status_code=404, detail="Cofre nao instalado. Abra a Loja.")
+
+
+@app.get("/api/cofre")
+def api_cofre_listar():
+    _cofre_ok()
+    from . import vault_store
+    return vault_store.listar()
+
+
+@app.post("/api/cofre")
+def api_cofre_criar(payload: dict = Body(...)):
+    _cofre_ok()
+    from . import vault_store
+    return vault_store.criar(payload.get("nome", ""), payload.get("blob", ""))
+
+
+@app.post("/api/cofre/importar")
+async def api_cofre_importar(arquivo: UploadFile = File(...), nome: str = Form(None)):
+    _cofre_ok()
+    from . import vault_store
+    return await vault_store.importar(arquivo, nome)
+
+
+@app.get("/api/cofre/{vault_id}")
+def api_cofre_obter(vault_id: str):
+    _cofre_ok()
+    from . import vault_store
+    return vault_store.obter(vault_id)
+
+
+@app.put("/api/cofre/{vault_id}")
+def api_cofre_atualizar(vault_id: str, payload: dict = Body(...)):
+    _cofre_ok()
+    from . import vault_store
+    return vault_store.atualizar(vault_id, payload.get("blob", ""), payload.get("nome"))
+
+
+@app.delete("/api/cofre/{vault_id}")
+def api_cofre_excluir(vault_id: str):
+    _cofre_ok()
+    from . import vault_store
+    vault_store.excluir(vault_id)
+    return {"ok": True}
+
+
+@app.get("/api/cofre/{vault_id}/exportar")
+def api_cofre_exportar(vault_id: str):
+    _cofre_ok()
+    from . import vault_store
+    path, nome = vault_store.caminho_export(vault_id)
+    return FileResponse(path, filename=nome, media_type="application/json")
 
 
 def _modelo_permitido(modelo: str | None) -> str:

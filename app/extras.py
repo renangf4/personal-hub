@@ -73,6 +73,16 @@ EXTRAS: dict[str, dict] = {
         "modulos": ["gcm_crypto"],
         "escopo_dados": "gcm-crypto",
     },
+    "cofre": {
+        "slug": "cofre",
+        "nome": "Cofre de senhas",
+        "descricao": "Arquivo .hubvault criptografado (AES-GCM). Senha-mestra so no navegador.",
+        "icone": "bi-safe2",
+        "packages": [],
+        "imports": [],
+        "modulos": ["cofre_senhas"],
+        "escopo_dados": "cofre-senhas",
+    },
 }
 
 # Formatos das categorias (slug da tool -> chave do modulo)
@@ -138,5 +148,14 @@ TOOL_META: dict[str, dict] = {
         "aceita": "",
         "controles": "crypto",
         "extra": "crypto",
+    },
+    "cofre_senhas": {
+        "slug": "cofre-senhas",
+        "nome": "Cofre de senhas",
+        "descricao": "Cofre local criptografado — importar, exportar e excluir.",
+        "icone": "bi-safe2",
+        "aceita": "",
+        "controles": "cofre",
+        "extra": "cofre",
     },
 }
