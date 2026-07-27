@@ -12,6 +12,7 @@ Instale sob demanda pela **Loja** (`/loja`):
 - **Desbloquear PDF** — senhas salvas, senha unica, wordlist ou PIN numerico
 - **Assistente de IA Local** — chat com Ollama; anexos de arquivo/PDF; carteiras por foco
 - **DNS e Whois** — DNS (incl. SPF/DMARC/CAA), Whois, IP/geo, HTTP/TLS, portas, ping/traceroute, crt.sh, RBL, Shodan / AbuseIPDB / VirusTotal (keys opcionais)
+- **Criptografar / Descriptografar** — AES-256-GCM no navegador (compativel com [gcm-encrypt-decrypt](https://github.com/renangf4/gcm-encrypt-decrypt))
 
 ## Requisitos
 

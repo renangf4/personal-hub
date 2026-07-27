@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+
+{% block title %}{{ tool.nome }} - Personal Hub{% endblock %}
+
+{% block content %}
+<nav aria-label="breadcrumb" class="mb-3">
+    <ol class="breadcrumb mb-0">
+        <li class="breadcrumb-item"><a href="/">Inicio</a></li>
+        <li class="breadcrumb-item active" aria-current="page">{{ tool.nome }}</li>
+    </ol>
+</nav>
+
+<div class="page-head justify-content-between">
+    <div class="d-flex align-items-start gap-3">
+        <a href="/" class="btn btn-outline-secondary page-head__back" title="Voltar">
+            <i class="bi bi-chevron-left"></i>
+        </a>
+        <div>
+            <h1 class="hub-title h4 mb-1"><i class="bi {{ tool.icone }} me-2 text-primary"></i>{{ tool.nome }}</h1>
+            <p class="hub-subtitle mb-0">{{ tool.descricao }}</p>
+        </div>
+    </div>
+</div>
+
+<div class="alert alert-secondary small mb-4">
+    <i class="bi bi-shield-lock me-1"></i>
+    Tudo roda no navegador (AES-256-GCM + PBKDF2). Nada e enviado ao servidor.
+    Compativel com
+    <a href="https://github.com/renangf4/gcm-encrypt-decrypt" target="_blank" rel="noopener">gcm-encrypt-decrypt</a>.
+</div>
+
+<ul class="nav nav-tabs mb-3" id="gcm-tabs" role="tablist">
+    <li class="nav-item" role="presentation">
+        <button class="nav-link active" id="gcm-tab-enc" data-bs-toggle="tab" data-bs-target="#gcm-pane-enc" type="button" role="tab">Criptografar</button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link" id="gcm-tab-dec" data-bs-toggle="tab" data-bs-target="#gcm-pane-dec" type="button" role="tab">Descriptografar</button>
+    </li>
+</ul>
+
+<div class="tab-content">
+    <div class="tab-pane fade show active" id="gcm-pane-enc" role="tabpanel">
+        <div class="card hub-card mb-4">
+            <div class="card-body p-4">
+                <div class="mb-3">
+                    <label class="form-label" for="gcm-plain">Texto</label>
+                    <textarea class="form-control" id="gcm-plain" rows="6" placeholder="Texto para criptografar"></textarea>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label" for="gcm-pass-enc">Senha</label>
+                    <div class="input-group">
+                        <input type="password" class="form-control" id="gcm-pass-enc" autocomplete="new-password">
+                        <button type="button" class="btn btn-outline-secondary gcm-toggle-pass" data-target="gcm-pass-enc" title="Mostrar/ocultar">
+                            <i class="bi bi-eye"></i>
+                        </button>
+                    </div>
+                    <div class="alert py-2 px-3 small mb-0 mt-2 d-none" id="gcm-pass-strength" role="status"></div>
+                </div>
+                <button type="button" class="btn btn-primary" id="gcm-btn-enc">
+                    <i class="bi bi-lock"></i> Criptografar
+                </button>
+                <div class="mt-3 d-none" id="gcm-enc-out-wrap">
+                    <label class="form-label">Resultado</label>
+                    <div class="input-group">
+                        <textarea class="form-control font-monospace small" id="gcm-enc-out" rows="4" readonly></textarea>
+                        <button type="button" class="btn btn-outline-secondary" id="gcm-btn-copy-enc" title="Copiar">
+                            <i class="bi bi-clipboard"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="alert alert-danger mt-3 d-none mb-0" id="gcm-enc-erro"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="tab-pane fade" id="gcm-pane-dec" role="tabpanel">
+        <div class="card hub-card mb-4">
+            <div class="card-body p-4">
+                <div class="mb-3">
+                    <label class="form-label" for="gcm-cipher">Texto criptografado</label>
+                    <textarea class="form-control font-monospace small" id="gcm-cipher" rows="6" placeholder="Cole o base64 criptografado"></textarea>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label" for="gcm-pass-dec">Senha</label>
+                    <div class="input-group">
+                        <input type="password" class="form-control" id="gcm-pass-dec" autocomplete="current-password">
+                        <button type="button" class="btn btn-outline-secondary gcm-toggle-pass" data-target="gcm-pass-dec" title="Mostrar/ocultar">
+                            <i class="bi bi-eye"></i>
+                        </button>
+                    </div>
+                </div>
+                <button type="button" class="btn btn-primary" id="gcm-btn-dec">
+                    <i class="bi bi-unlock"></i> Descriptografar
+                </button>
+                <div class="mt-3 d-none" id="gcm-dec-out-wrap">
+                    <label class="form-label">Resultado</label>
+                    <div class="input-group">
+                        <textarea class="form-control" id="gcm-dec-out" rows="4" readonly></textarea>
+                        <button type="button" class="btn btn-outline-secondary" id="gcm-btn-copy-dec" title="Copiar">
+                            <i class="bi bi-clipboard"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="alert alert-danger mt-3 d-none mb-0" id="gcm-dec-erro"></div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/gcm_crypto.js"></script>
+{% endblock %}

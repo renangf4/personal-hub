@@ -63,6 +63,16 @@ EXTRAS: dict[str, dict] = {
         "modulos": ["rede_lookup"],
         "escopo_dados": "rede-lookup",
     },
+    "crypto": {
+        "slug": "crypto",
+        "nome": "Criptografar / Descriptografar",
+        "descricao": "AES-256-GCM no navegador (PBKDF2). Compativel com gcm-encrypt-decrypt.",
+        "icone": "bi-shield-lock",
+        "packages": [],
+        "imports": [],
+        "modulos": ["gcm_crypto"],
+        "escopo_dados": "gcm-crypto",
+    },
 }
 
 # Formatos das categorias (slug da tool -> chave do modulo)
@@ -119,5 +129,14 @@ TOOL_META: dict[str, dict] = {
         "aceita": "",
         "controles": "rede",
         "extra": "rede",
+    },
+    "gcm_crypto": {
+        "slug": "gcm-crypto",
+        "nome": "Criptografar / Descriptografar",
+        "descricao": "AES-256-GCM no navegador — nada sobe pro servidor.",
+        "icone": "bi-shield-lock",
+        "aceita": "",
+        "controles": "crypto",
+        "extra": "crypto",
     },
 }

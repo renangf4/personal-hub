@@ -177,6 +177,12 @@ def tool_page(request: Request, slug: str):
             },
         )
 
+    if slug == "gcm-crypto":
+        return templates.TemplateResponse(
+            "gcm_crypto.html",
+            {"request": request, "tool": tool},
+        )
+
     return templates.TemplateResponse(
         "tool.html",
         {"request": request, "tool": tool, "controles": tool.get("controles", "none")},
