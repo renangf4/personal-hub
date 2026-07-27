@@ -566,3 +566,71 @@ code {
     white-space: pre-wrap;
     word-break: break-word;
 }
+
+.rede-tabs {
+    border-bottom: 1px solid var(--hub-border);
+    gap: 0.15rem;
+    scrollbar-width: thin;
+}
+
+.rede-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    border: 0 !important;
+    border-radius: 0.55rem 0.55rem 0 0 !important;
+    color: var(--hub-muted) !important;
+    background: rgba(255, 255, 255, 0.04) !important;
+    white-space: nowrap;
+    margin-bottom: 0 !important;
+}
+
+.rede-tab.active {
+    background: rgba(255, 255, 255, 0.08) !important;
+    color: var(--hub-text) !important;
+}
+
+.rede-tab--loading {
+    color: #9aa3b5 !important;
+    background: rgba(154, 163, 181, 0.12) !important;
+}
+
+.rede-tab--loading.active {
+    background: rgba(154, 163, 181, 0.2) !important;
+}
+
+.rede-tab--ok {
+    color: #3dd68c !important;
+    background: rgba(61, 214, 140, 0.12) !important;
+}
+
+.rede-tab--ok.active {
+    background: rgba(61, 214, 140, 0.22) !important;
+    color: #6eebab !important;
+}
+
+.rede-tab--erro {
+    color: #ff6b6b !important;
+    background: rgba(255, 107, 107, 0.12) !important;
+}
+
+.rede-tab--erro.active {
+    background: rgba(255, 107, 107, 0.22) !important;
+}
+
+.rede-tab__spin {
+    width: 0.85rem;
+    height: 0.85rem;
+    border-width: 0.12em;
+}
+
+.rede-tab__ok,
+.rede-tab__err {
+    font-size: 0.85rem;
+}
+
+.rede-pane-loading {
+    display: flex;
+    align-items: center;
+    min-height: 4rem;
+}

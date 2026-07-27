@@ -169,7 +169,11 @@ def tool_page(request: Request, slug: str):
             {
                 "request": request,
                 "tool": tool,
-                "shodan_key": db.obter_setting("shodan_api_key"),
+                "keys": {
+                    "shodan": db.obter_setting("shodan_api_key"),
+                    "abuseipdb": db.obter_setting("abuseipdb_api_key"),
+                    "virustotal": db.obter_setting("virustotal_api_key"),
+                },
             },
         )
 
@@ -605,28 +609,37 @@ async def api_rede_meu_ip():
     return rede.meu_ip_publico()
 
 
-@app.get("/api/rede/shodan-key")
-def api_rede_shodan_key_get():
+_REDE_KEYS = {
+    "shodan": "shodan_api_key",
+    "abuseipdb": "abuseipdb_api_key",
+    "virustotal": "virustotal_api_key",
+}
+
+
+@app.get("/api/rede/keys")
+def api_rede_keys_get():
     _rede()
-    key = db.obter_setting("shodan_api_key")
-    return {"ok": True, "configurada": bool(key), "key": key}
+    out = {}
+    for slug, chave in _REDE_KEYS.items():
+        val = db.obter_setting(chave)
+        out[slug] = {"configurada": bool(val), "key": val}
+    return {"ok": True, "keys": out}
 
 
-@app.post("/api/rede/shodan-key")
-async def api_rede_shodan_key_set(payload: dict = Body(...)):
+@app.post("/api/rede/keys")
+async def api_rede_keys_set(payload: dict = Body(...)):
     _rede()
-    key = str(payload.get("key") or "").strip()
-    db.salvar_setting("shodan_api_key", key)
-    return {"ok": True, "configurada": bool(key)}
+    salvos = []
+    for slug, chave in _REDE_KEYS.items():
+        if slug in payload:
+            db.salvar_setting(chave, str(payload.get(slug) or "").strip())
+            salvos.append(slug)
+    return {"ok": True, "salvos": salvos}
 
 
-@app.post("/api/rede/shodan")
-async def api_rede_shodan(payload: dict = Body(...)):
-    rede = _rede()
-    alvo = payload.get("alvo") or ""
-    key = db.obter_setting("shodan_api_key")
+def _rede_call(fn, *args, **kwargs):
     try:
-        return rede.consultar_shodan(alvo, key)
+        return fn(*args, **kwargs)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
@@ -636,35 +649,82 @@ async def api_rede_shodan(payload: dict = Body(...)):
 @app.post("/api/rede/dns")
 async def api_rede_dns(payload: dict = Body(...)):
     rede = _rede()
-    alvo = payload.get("alvo") or ""
-    tipos = payload.get("tipos")
-    try:
-        return rede.consultar_dns(alvo, tipos)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e)) from e
+    return _rede_call(rede.consultar_dns, payload.get("alvo") or "", payload.get("tipos"))
 
 
 @app.post("/api/rede/whois")
 async def api_rede_whois(payload: dict = Body(...)):
     rede = _rede()
-    alvo = payload.get("alvo") or ""
-    try:
-        return rede.consultar_whois(alvo)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e)) from e
+    return _rede_call(rede.consultar_whois, payload.get("alvo") or "")
 
 
 @app.post("/api/rede/ip")
 async def api_rede_ip(payload: dict = Body(...)):
     rede = _rede()
-    alvo = payload.get("alvo") or ""
-    try:
-        return rede.consultar_ip(alvo)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e)) from e
+    return _rede_call(rede.consultar_ip, payload.get("alvo") or "")
+
+
+@app.post("/api/rede/http")
+async def api_rede_http(payload: dict = Body(...)):
+    rede = _rede()
+    return _rede_call(rede.consultar_http_tls, payload.get("alvo") or "")
+
+
+@app.post("/api/rede/portas")
+async def api_rede_portas(payload: dict = Body(...)):
+    rede = _rede()
+    return _rede_call(rede.consultar_portas, payload.get("alvo") or "")
+
+
+@app.post("/api/rede/ping")
+async def api_rede_ping(payload: dict = Body(...)):
+    rede = _rede()
+    return _rede_call(rede.consultar_ping, payload.get("alvo") or "")
+
+
+@app.post("/api/rede/traceroute")
+async def api_rede_traceroute(payload: dict = Body(...)):
+    rede = _rede()
+    return _rede_call(rede.consultar_traceroute, payload.get("alvo") or "")
+
+
+@app.post("/api/rede/certificados")
+async def api_rede_certificados(payload: dict = Body(...)):
+    rede = _rede()
+    return _rede_call(rede.consultar_certificados, payload.get("alvo") or "")
+
+
+@app.post("/api/rede/rbl")
+async def api_rede_rbl(payload: dict = Body(...)):
+    rede = _rede()
+    return _rede_call(rede.consultar_rbl, payload.get("alvo") or "")
+
+
+@app.post("/api/rede/shodan")
+async def api_rede_shodan(payload: dict = Body(...)):
+    rede = _rede()
+    return _rede_call(
+        rede.consultar_shodan,
+        payload.get("alvo") or "",
+        db.obter_setting("shodan_api_key"),
+    )
+
+
+@app.post("/api/rede/abuseipdb")
+async def api_rede_abuseipdb(payload: dict = Body(...)):
+    rede = _rede()
+    return _rede_call(
+        rede.consultar_abuseipdb,
+        payload.get("alvo") or "",
+        db.obter_setting("abuseipdb_api_key"),
+    )
+
+
+@app.post("/api/rede/virustotal")
+async def api_rede_virustotal(payload: dict = Body(...)):
+    rede = _rede()
+    return _rede_call(
+        rede.consultar_virustotal,
+        payload.get("alvo") or "",
+        db.obter_setting("virustotal_api_key"),
+    )

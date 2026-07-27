@@ -20,82 +20,105 @@
             <p class="hub-subtitle mb-0">{{ tool.descricao }}</p>
         </div>
     </div>
+    <button type="button" class="btn btn-sm btn-outline-secondary" id="rede-btn-export" title="Exportar JSON da ultima consulta">
+        <i class="bi bi-download"></i> JSON
+    </button>
 </div>
 
 <div class="card hub-card mb-4">
     <div class="card-body p-4">
-        <div class="mb-3">
-            <label class="form-label">Dominio ou IP</label>
-            <div class="input-group">
-                <input type="text" class="form-control" id="rede-alvo" placeholder="exemplo.com ou 8.8.8.8" autocomplete="off">
-                <button type="button" class="btn btn-primary" id="rede-btn-tudo">
-                    <i class="bi bi-search"></i> Consultar
-                </button>
+        <div class="row g-3 mb-3">
+            <div class="col-12 col-md-4">
+                <label class="form-label" for="rede-modo">Tipo de consulta</label>
+                <select class="form-select" id="rede-modo">
+                    <option value="dominio">Dominio / URL</option>
+                    <option value="ip">IP</option>
+                </select>
             </div>
-            <small class="text-secondary">Marque as fontes e clique em Consultar.</small>
-            <div class="small text-secondary mt-2" id="rede-meu-ip">
-                <i class="bi bi-eye me-1"></i>
-                Seu IP publico nestas consultas:
-                <code id="rede-meu-ip-valor">…</code>
+            <div class="col-12 col-md-8">
+                <label class="form-label" for="rede-alvo" id="rede-alvo-label">Dominio ou URL</label>
+                <div class="input-group">
+                    <input type="text" class="form-control" id="rede-alvo" placeholder="exemplo.com" autocomplete="off">
+                    <button type="button" class="btn btn-primary" id="rede-btn-tudo">
+                        <i class="bi bi-search"></i> Consultar
+                    </button>
+                </div>
             </div>
         </div>
 
-        <div class="d-flex flex-wrap gap-2 mb-3" id="rede-acoes">
-            <button type="button" class="btn btn-sm btn-primary" data-rede-acao="dns" aria-pressed="true">DNS</button>
-            <button type="button" class="btn btn-sm btn-primary" data-rede-acao="whois" aria-pressed="true">Whois</button>
-            <button type="button" class="btn btn-sm btn-primary" data-rede-acao="ip" aria-pressed="true">IP / Geo</button>
-            <button type="button" class="btn btn-sm btn-outline-primary" data-rede-acao="shodan" aria-pressed="false">Shodan</button>
+        <div class="small text-secondary mb-3" id="rede-meu-ip">
+            <i class="bi bi-eye me-1"></i>
+            Seu IP publico nestas consultas:
+            <code id="rede-meu-ip-valor">…</code>
         </div>
 
-        <div class="mb-3 d-none" id="rede-shodan-wrap">
-            <label class="form-label">API key Shodan</label>
-            <div class="input-group">
-                <input type="password" class="form-control" id="rede-shodan-key"
-                       placeholder="Cole sua key (salva local)" value="{{ shodan_key or '' }}" autocomplete="off">
-                <button type="button" class="btn btn-outline-secondary" id="rede-btn-salvar-shodan">
-                    Salvar
-                </button>
+        <div class="mb-2">
+            <label class="form-label mb-2">Fontes</label>
+            <div class="d-flex flex-wrap gap-2" id="rede-acoes">
+                <button type="button" class="btn btn-sm btn-outline-primary d-none" data-rede-acao="dns" data-rede-modos="dominio">DNS</button>
+                <button type="button" class="btn btn-sm btn-outline-primary d-none" data-rede-acao="whois" data-rede-modos="dominio,ip">Whois</button>
+                <button type="button" class="btn btn-sm btn-outline-primary d-none" data-rede-acao="ip" data-rede-modos="dominio,ip">IP / Geo</button>
+                <button type="button" class="btn btn-sm btn-outline-primary d-none" data-rede-acao="http" data-rede-modos="dominio,ip">HTTP / TLS</button>
+                <button type="button" class="btn btn-sm btn-outline-primary d-none" data-rede-acao="portas" data-rede-modos="dominio,ip">Portas</button>
+                <button type="button" class="btn btn-sm btn-outline-primary d-none" data-rede-acao="ping" data-rede-modos="dominio,ip">Ping</button>
+                <button type="button" class="btn btn-sm btn-outline-primary d-none" data-rede-acao="traceroute" data-rede-modos="dominio,ip">Traceroute</button>
+                <button type="button" class="btn btn-sm btn-outline-primary d-none" data-rede-acao="certificados" data-rede-modos="dominio">crt.sh</button>
+                <button type="button" class="btn btn-sm btn-outline-primary d-none" data-rede-acao="rbl" data-rede-modos="dominio,ip">RBL</button>
+                <button type="button" class="btn btn-sm btn-outline-primary d-none" data-rede-acao="shodan" data-rede-key="shodan" data-rede-modos="dominio,ip">Shodan</button>
+                <button type="button" class="btn btn-sm btn-outline-primary d-none" data-rede-acao="abuseipdb" data-rede-key="abuseipdb" data-rede-modos="dominio,ip">AbuseIPDB</button>
+                <button type="button" class="btn btn-sm btn-outline-primary d-none" data-rede-acao="virustotal" data-rede-key="virustotal" data-rede-modos="dominio,ip">VirusTotal</button>
             </div>
-            <small class="text-secondary">
-                Gratis em
-                <a href="https://account.shodan.io/" target="_blank" rel="noopener">account.shodan.io</a>
-            </small>
+            <small class="text-secondary">As opcoes mudam conforme o tipo. Shodan / AbuseIPDB / VirusTotal pedem API key.</small>
         </div>
 
-        <div id="rede-status" class="d-none alert alert-info py-2 mb-3">
-            <div class="d-flex align-items-center">
-                <div class="spinner-border spinner-border-sm me-2" role="status"></div>
-                <span>Consultando...</span>
+        <div class="mb-0 d-none mt-3" id="rede-keys-wrap">
+            <div class="d-none rede-key-pane" data-rede-key-pane="shodan">
+                <label class="form-label">API key Shodan</label>
+                <div class="input-group mb-2">
+                    <input type="password" class="form-control rede-key-input" data-key="shodan"
+                           placeholder="account.shodan.io" value="{{ keys.shodan or '' }}" autocomplete="off">
+                </div>
             </div>
+            <div class="d-none rede-key-pane" data-rede-key-pane="abuseipdb">
+                <label class="form-label">API key AbuseIPDB</label>
+                <div class="input-group mb-2">
+                    <input type="password" class="form-control rede-key-input" data-key="abuseipdb"
+                           placeholder="abuseipdb.com/account/api" value="{{ keys.abuseipdb or '' }}" autocomplete="off">
+                </div>
+            </div>
+            <div class="d-none rede-key-pane" data-rede-key-pane="virustotal">
+                <label class="form-label">API key VirusTotal</label>
+                <div class="input-group mb-2">
+                    <input type="password" class="form-control rede-key-input" data-key="virustotal"
+                           placeholder="virustotal.com/gui/my-apikey" value="{{ keys.virustotal or '' }}" autocomplete="off">
+                </div>
+            </div>
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="rede-btn-salvar-keys">Salvar keys</button>
         </div>
-        <div id="rede-erro" class="d-none alert alert-danger py-2 mb-3"></div>
+
+        <div id="rede-erro" class="d-none alert alert-danger py-2 mb-0 mt-3"></div>
     </div>
 </div>
 
-<div id="rede-resultados" class="d-none">
-    <div class="card hub-card mb-4 d-none" id="rede-card-dns">
-        <div class="card-body p-4">
-            <h2 class="h6 text-secondary text-uppercase mb-3 hub-section-label">DNS</h2>
-            <div id="rede-out-dns"></div>
-        </div>
+<div id="rede-resultados" class="card hub-card mb-4 d-none">
+    <div class="px-3 pt-3 pb-1" id="rede-alvo-atual-wrap">
+        <div class="small text-secondary">Consultando</div>
+        <div class="fw-semibold text-break"><code id="rede-alvo-atual"></code></div>
     </div>
-    <div class="card hub-card mb-4 d-none" id="rede-card-whois">
-        <div class="card-body p-4">
-            <h2 class="h6 text-secondary text-uppercase mb-3 hub-section-label">Whois</h2>
-            <div id="rede-out-whois"></div>
-        </div>
-    </div>
-    <div class="card hub-card mb-4 d-none" id="rede-card-ip">
-        <div class="card-body p-4">
-            <h2 class="h6 text-secondary text-uppercase mb-3 hub-section-label">IP / Geo</h2>
-            <div id="rede-out-ip"></div>
-        </div>
-    </div>
-    <div class="card hub-card mb-4 d-none" id="rede-card-shodan">
-        <div class="card-body p-4">
-            <h2 class="h6 text-secondary text-uppercase mb-3 hub-section-label">Shodan</h2>
-            <div id="rede-out-shodan"></div>
-        </div>
+    <ul class="nav nav-tabs rede-tabs flex-nowrap overflow-auto px-2 pt-2" id="rede-tabs" role="tablist"></ul>
+    <div class="card-body p-4 tab-content" id="rede-tab-content">
+        <div class="tab-pane fade" id="pane-dns" role="tabpanel"><div id="rede-out-dns"></div></div>
+        <div class="tab-pane fade" id="pane-whois" role="tabpanel"><div id="rede-out-whois"></div></div>
+        <div class="tab-pane fade" id="pane-ip" role="tabpanel"><div id="rede-out-ip"></div></div>
+        <div class="tab-pane fade" id="pane-http" role="tabpanel"><div id="rede-out-http"></div></div>
+        <div class="tab-pane fade" id="pane-portas" role="tabpanel"><div id="rede-out-portas"></div></div>
+        <div class="tab-pane fade" id="pane-ping" role="tabpanel"><div id="rede-out-ping"></div></div>
+        <div class="tab-pane fade" id="pane-traceroute" role="tabpanel"><div id="rede-out-traceroute"></div></div>
+        <div class="tab-pane fade" id="pane-certificados" role="tabpanel"><div id="rede-out-certificados"></div></div>
+        <div class="tab-pane fade" id="pane-rbl" role="tabpanel"><div id="rede-out-rbl"></div></div>
+        <div class="tab-pane fade" id="pane-shodan" role="tabpanel"><div id="rede-out-shodan"></div></div>
+        <div class="tab-pane fade" id="pane-abuseipdb" role="tabpanel"><div id="rede-out-abuseipdb"></div></div>
+        <div class="tab-pane fade" id="pane-virustotal" role="tabpanel"><div id="rede-out-virustotal"></div></div>
     </div>
 </div>
 {% endblock %}

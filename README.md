@@ -11,7 +11,7 @@ Instale sob demanda pela **Loja** (`/loja`):
 - **Screenshot WordPress** — padroniza em 1200x900 PNG
 - **Desbloquear PDF** — senhas salvas, senha unica, wordlist ou PIN numerico
 - **Assistente de IA Local** — chat com Ollama; anexos de arquivo/PDF; carteiras por foco
-- **DNS e Whois** — DNS, Whois, IP/geo e Shodan (API key opcional)
+- **DNS e Whois** — DNS (incl. SPF/DMARC/CAA), Whois, IP/geo, HTTP/TLS, portas, ping/traceroute, crt.sh, RBL, Shodan / AbuseIPDB / VirusTotal (keys opcionais)
 
 ## Requisitos
 

@@ -56,7 +56,7 @@ EXTRAS: dict[str, dict] = {
     "rede": {
         "slug": "rede",
         "nome": "DNS e Whois",
-        "descricao": "Consulta DNS, Whois, IP/geo e Shodan pra dominio ou endereco.",
+        "descricao": "DNS, Whois, IP/geo, HTTP/TLS, portas, ping, crt.sh, RBL, Shodan, AbuseIPDB e VirusTotal.",
         "icone": "bi-globe2",
         "packages": ["dnspython==2.7.0", "python-whois==0.9.4", "httpx==0.27.2"],
         "imports": ["dns", "whois", "httpx"],
@@ -114,7 +114,7 @@ TOOL_META: dict[str, dict] = {
     "rede_lookup": {
         "slug": "rede-lookup",
         "nome": "DNS e Whois",
-        "descricao": "Lookup DNS, Whois, IP/geo e Shodan — util no dia a dia de dev.",
+        "descricao": "Lookup completo de rede: DNS, Whois, TLS, portas, reputacao e Shodan.",
         "icone": "bi-globe2",
         "aceita": "",
         "controles": "rede",
