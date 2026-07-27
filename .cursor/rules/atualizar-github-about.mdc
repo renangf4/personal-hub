@@ -28,4 +28,4 @@ Regras do arquivo:
 
 Nao invente topics de marketing. Se o `gh` estiver disponivel e o usuario pedir sincronizar na hora, pode rodar o equivalente da Action; senao o push em `main` sincroniza.
 
-Se a Action falhar com 403 em topics, criar o secret `GH_REPO_META_TOKEN` (PAT com admin / `public_repo`).
+Se a Action falhar sem secret: criar `GH_REPO_META_TOKEN` em Settings > Secrets (PAT classic `public_repo`, ou fine-grained com Administration Read and write neste repo). O `GITHUB_TOKEN` da Action **nao** consegue editar About/topics.
