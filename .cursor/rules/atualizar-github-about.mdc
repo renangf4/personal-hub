@@ -1,0 +1,31 @@
+---
+description: Atualizar About/topics do GitHub ao subir commit
+alwaysApply: true
+---
+
+# GitHub About e topics
+
+Fonte da verdade: `.github/repo-meta.yml` (description, homepage, topics).
+A Action `sync-repo-meta` aplica no GitHub quando esse arquivo muda em `main`.
+
+Nao atualize o YAML no meio da implementacao. Atualize **somente quando o usuario pedir pra fazer commit / subir no repositorio** — e so se o commit mudar o proposito ou o conjunto de ferramentas.
+
+Nesse momento (antes do commit), alinhe o `repo-meta.yml` ao que realmente vai subir.
+
+Atualize se o commit incluir:
+- Nova ferramenta / extra na Loja (ou remocao)
+- Mudanca forte de proposito do hub (README intro)
+- Novo tema relevante pras topics (ex.: crypto, dns, ollama)
+
+Nao precisa atualizar por:
+- Fix pontual, CSS, refactor interno
+- Ajuste menor de copy sem mudar o escopo
+
+Regras do arquivo:
+- `description`: portugues ou ingles curto, ~1–2 frases, max ~350 chars
+- `homepage`: URL do repo (ou site, se existir)
+- `topics`: so minusculas, kebab-case, no maximo 20; refletir o que existe de verdade
+
+Nao invente topics de marketing. Se o `gh` estiver disponivel e o usuario pedir sincronizar na hora, pode rodar o equivalente da Action; senao o push em `main` sincroniza.
+
+Se a Action falhar com 403 em topics, criar o secret `GH_REPO_META_TOKEN` (PAT com admin / `public_repo`).

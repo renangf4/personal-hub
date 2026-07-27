@@ -1,21 +1,25 @@
 ---
-description: Atualizar README apos mudancas relevantes no projeto
+description: Atualizar README ao subir commit, se a mudanca exigir
 alwaysApply: true
 ---
 
 # README
 
-Apos alteracoes que mudem o comportamento, as ferramentas, a Loja, a instalacao ou a estrutura do projeto, atualize o `README.md` no mesmo trabalho — se necessario.
+Nao atualize o `README.md` no meio da implementacao. Atualize **somente quando o usuario pedir pra fazer commit / subir no repositorio** — e so se as mudancas do commit pedirem isso.
 
-Atualize quando:
+Nesse momento (antes do commit), alinhe o README ao que realmente vai entrar no commit.
+
+Atualize se o commit incluir:
 - Nova ferramenta / extra na Loja
-- Formatos, modos ou deps relevantes mudarem
-- Fluxo de start / requisitos mudarem
-- Estrutura de pastas ou caracteristicas listadas ficarem desatualizadas
+- Formatos, modos ou deps relevantes
+- Fluxo de start / requisitos
+- Estrutura de pastas ou caracteristicas listadas que ficariam desatualizadas
 
 Nao precisa atualizar por:
 - Refactor interno sem impacto pro usuario
 - Ajuste so de CSS/UI menor
 - Fix pontual sem mudar o que o README descreve
 
-Mantenha o README curto, em portugues, alinhado ao que realmente existe no codigo (`app/extras.py`, tools, scripts).
+Mantenha o README curto, em portugues, alinhado ao codigo (`app/extras.py`, tools, scripts).
+
+Se o mesmo commit mudar o proposito ou o conjunto de ferramentas do hub, atualize tambem `.github/repo-meta.yml` — ver regra `atualizar-github-about`.

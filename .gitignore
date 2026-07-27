@@ -1,11 +1,9 @@
 venv/
 __pycache__/
 *.pyc
-storage/uploads/*
-storage/outputs/*
-storage/vaults/*
-!storage/uploads/.gitkeep
-!storage/outputs/.gitkeep
-!storage/vaults/.gitkeep
-storage/hub.db
 .env
+
+# Dados locais do hub (DB, uploads, cofres, saidas) — so .gitkeep vai pro git
+storage/**
+!storage/**/
+!storage/**/.gitkeep

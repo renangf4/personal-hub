@@ -1,0 +1,46 @@
+name: Sync GitHub About
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/repo-meta.yml
+      - .github/workflows/sync-repo-meta.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Instalar yq
+        run: |
+          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/download/v4.44.3/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+
+      - name: Aplicar description, homepage e topics
+        env:
+          # Se GITHUB_TOKEN der 403 em topics, crie um PAT classic (public_repo)
+          # ou fine-grained com Administration: Read and write e salve como GH_REPO_META_TOKEN.
+          GH_TOKEN: ${{ secrets.GH_REPO_META_TOKEN || secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          DESC=$(yq -r '.description' .github/repo-meta.yml | tr '\n' ' ' | sed 's/  */ /g' | sed 's/[[:space:]]*$//')
+          HOME_URL=$(yq -r '.homepage // ""' .github/repo-meta.yml)
+
+          echo "Description: ${DESC:0:100}"
+          echo "Homepage: $HOME_URL"
+          yq -r '.topics[]' .github/repo-meta.yml | sed 's/^/ - /'
+
+          ARGS=(repo edit "$GITHUB_REPOSITORY" --description "$DESC")
+          if [ -n "$HOME_URL" ] && [ "$HOME_URL" != "null" ]; then
+            ARGS+=(--homepage "$HOME_URL")
+          fi
+          gh "${ARGS[@]}"
+
+          yq -o=json '{"names": .topics}' .github/repo-meta.yml \
+            | gh api -X PUT "repos/$GITHUB_REPOSITORY/topics" --input -

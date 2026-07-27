@@ -1,0 +1,24 @@
+# Fonte da verdade do About e das Topics do GitHub.
+# A Action .github/workflows/sync-repo-meta.yml aplica no push.
+# Description: max ~350 chars. Topics: minusculas, max 20.
+
+description: >-
+  Hub local de utilitarios pessoais (FastAPI): midia, PDF, IA com Ollama,
+  DNS/Whois, criptografia AES-GCM e cofre de senhas — so em localhost.
+
+homepage: https://github.com/renangf4/personal-hub
+
+topics:
+  - personal-hub
+  - fastapi
+  - python
+  - local-first
+  - ollama
+  - pdf
+  - dns
+  - whois
+  - encryption
+  - aes-gcm
+  - password-manager
+  - web-crypto
+  - bootstrap
