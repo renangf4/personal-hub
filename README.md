@@ -10,7 +10,7 @@ Instale sob demanda pela **Loja** (`/loja`):
 - **Imagem** — WebP, PNG, JPEG, GIF, BMP, TIFF
 - **Screenshot WordPress** — padroniza em 1200x900 PNG
 - **Desbloquear PDF** — senhas salvas, senha unica, wordlist ou PIN numerico
-- **Assistente de IA Local** — chat com Ollama; anexos de arquivo/PDF; carteiras por foco
+- **Assistente de IA Local** — chat com Ollama em tela cheia; anexos; carteiras por foco; contexto sugerido pela RAM livre (com folga pra nao travar o PC)
 - **DNS e Whois** — DNS (incl. SPF/DMARC/CAA), Whois, IP/geo, HTTP/TLS, portas, ping/traceroute, crt.sh, RBL, Shodan / AbuseIPDB / VirusTotal (keys opcionais)
 - **Criptografar / Descriptografar** — AES-256-GCM no navegador (compativel com [gcm-encrypt-decrypt](https://github.com/renangf4/gcm-encrypt-decrypt))
 - **Cofre de senhas** — arquivo `.hubvault` criptografado no navegador; importar / exportar / excluir; senha-mestra nunca gravada
@@ -81,4 +81,6 @@ personal-hub/
 - Conversoes de video sao sincronas: a request espera o ffmpeg terminar.
 - Toda a comunicacao e `127.0.0.1`; nada e exposto na rede.
 - O Assistente de IA exige Ollama rodando localmente; a UI ajuda a instalar e baixar modelos.
+- No Windows, o hub prefere o app de bandeja do Ollama (evita terminais pretos a cada pergunta).
+- O tamanho de contexto e sugerido conforme a RAM livre; a geracao pode ser limitada/interrompida pra preservar folga de memoria.
 - Consultas de rede (Whois/geo/Shodan) usam seu IP publico — a tela avisa qual IP esta saindo.

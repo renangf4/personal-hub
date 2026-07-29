@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 from typing import AsyncIterator
 
@@ -14,6 +15,75 @@ import httpx
 OLLAMA_BASE_URL = "http://localhost:11434"
 MODELO_PADRAO = "qwen2.5-coder:3b"
 CONTEXT_PADRAO = 32768
+# Folga minima pra o SO nao travar (Ollama nao expoe teto de RAM nativo).
+RAM_FOLGA_BYTES = 500 * 1024 * 1024
+
+
+def obter_ram() -> dict | None:
+    """Memoria fisica: total / disponivel / usada (bytes). Sem deps extras."""
+    try:
+        sistema = platform.system()
+        if sistema == "Windows":
+            import ctypes
+
+            class MEMORYSTATUSEX(ctypes.Structure):
+                _fields_ = [
+                    ("dwLength", ctypes.c_ulong),
+                    ("dwMemoryLoad", ctypes.c_ulong),
+                    ("ullTotalPhys", ctypes.c_ulonglong),
+                    ("ullAvailPhys", ctypes.c_ulonglong),
+                    ("ullTotalPageFile", ctypes.c_ulonglong),
+                    ("ullAvailPageFile", ctypes.c_ulonglong),
+                    ("ullTotalVirtual", ctypes.c_ulonglong),
+                    ("ullAvailVirtual", ctypes.c_ulonglong),
+                    ("ullAvailExtendedVirtual", ctypes.c_ulonglong),
+                ]
+
+            stat = MEMORYSTATUSEX()
+            stat.dwLength = ctypes.sizeof(MEMORYSTATUSEX)
+            if not ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(stat)):
+                return None
+            total = int(stat.ullTotalPhys)
+            livre = int(stat.ullAvailPhys)
+            return {"total": total, "disponivel": livre, "usada": total - livre}
+
+        if sistema == "Linux":
+            info: dict[str, int] = {}
+            with open("/proc/meminfo", encoding="utf-8") as f:
+                for linha in f:
+                    partes = linha.split(":")
+                    if len(partes) != 2:
+                        continue
+                    chave = partes[0].strip()
+                    valor = partes[1].strip().split()[0]
+                    if chave in ("MemTotal", "MemAvailable"):
+                        info[chave] = int(valor) * 1024
+            total = info.get("MemTotal")
+            livre = info.get("MemAvailable")
+            if total is None or livre is None:
+                return None
+            return {"total": total, "disponivel": livre, "usada": total - livre}
+
+        if sistema == "Darwin":
+            import re
+
+            total = int(subprocess.check_output(["sysctl", "-n", "hw.memsize"], text=True).strip())
+            vm = subprocess.check_output(["vm_stat"], text=True)
+            page = 4096
+            m = re.search(r"page size of (\d+)", vm)
+            if m:
+                page = int(m.group(1))
+            livres = 0
+            for chave in ("Pages free", "Pages inactive", "Pages speculative"):
+                m = re.search(rf"{chave}:\s+(\d+)", vm)
+                if m:
+                    livres += int(m.group(1))
+            livre = livres * page
+            return {"total": total, "disponivel": livre, "usada": total - livre}
+    except Exception:
+        return None
+    return None
+
 
 CONTEXTOS = [
     {
@@ -22,7 +92,8 @@ CONTEXTOS = [
         "nome": "Perguntas curtas",
         "descricao": "Pouco uso de memoria. Historico curto.",
         "indicado": False,
-        "ram": "pouca RAM",
+        "ram": "~2 GB",
+        "ram_gb": 2,
     },
     {
         "tokens": 8192,
@@ -30,7 +101,8 @@ CONTEXTOS = [
         "nome": "Uso leve",
         "descricao": "Chat simples e trechos pequenos de codigo.",
         "indicado": False,
-        "ram": "pouca RAM",
+        "ram": "~4 GB",
+        "ram_gb": 4,
     },
     {
         "tokens": 16384,
@@ -38,15 +110,17 @@ CONTEXTOS = [
         "nome": "Codigo moderado",
         "descricao": "Arquivos medios. Bom em maquinas com ~8 GB de RAM.",
         "indicado": False,
-        "ram": "~8 GB RAM",
+        "ram": "~8 GB",
+        "ram_gb": 8,
     },
     {
         "tokens": 32768,
         "label": "32k",
-        "nome": "Recomendado",
-        "descricao": "Codigo + historico. Equilibrio ideal (~16 GB RAM).",
-        "indicado": True,
-        "ram": "~16 GB RAM",
+        "nome": "Equilibrado",
+        "descricao": "Codigo + historico. Equilibrio tipico (~16 GB RAM).",
+        "indicado": False,
+        "ram": "~16 GB",
+        "ram_gb": 16,
     },
     {
         "tokens": 65536,
@@ -54,7 +128,8 @@ CONTEXTOS = [
         "nome": "Logs / multi-arquivo",
         "descricao": "Logs grandes e varios arquivos. Usa bastante RAM (e VRAM se o modelo estiver na GPU).",
         "indicado": False,
-        "ram": "~16 GB+ RAM",
+        "ram": "~20 GB",
+        "ram_gb": 20,
     },
     {
         "tokens": 131072,
@@ -62,11 +137,77 @@ CONTEXTOS = [
         "nome": "Contexto maximo",
         "descricao": "Projetos grandes. Exige muita RAM; com GPU, tambem consome VRAM.",
         "indicado": False,
-        "ram": "~32 GB+ RAM",
+        "ram": "~32 GB",
+        "ram_gb": 32,
     },
 ]
 
 CONTEXTOS_PERMITIDOS = {c["tokens"] for c in CONTEXTOS}
+
+
+def sugerir_contexto(ram: dict | None) -> int:
+    """Maior contexto cuja estimativa + folga de 500 MB cabe na RAM livre."""
+    fallback = next(
+        (c["tokens"] for c in CONTEXTOS if c["tokens"] == CONTEXT_PADRAO),
+        CONTEXTOS[0]["tokens"],
+    )
+    if not ram or not ram.get("disponivel"):
+        return fallback
+    livre_gb = ram["disponivel"] / (1024 ** 3)
+    folga_gb = RAM_FOLGA_BYTES / (1024 ** 3)
+    cabem = [
+        c for c in CONTEXTOS
+        if c.get("ram_gb", 0) + folga_gb <= livre_gb
+    ]
+    if not cabem:
+        return CONTEXTOS[0]["tokens"]
+    return cabem[-1]["tokens"]
+
+
+def limitar_contexto(num_ctx: int, ram: dict | None = None) -> tuple[int | None, dict | None]:
+    """Ajusta num_ctx pra caber na RAM livre com folga.
+
+    Retorna (ctx_ou_None, aviso_ou_erro).
+    """
+    ram = ram if ram is not None else obter_ram()
+    pedido = num_ctx if num_ctx in CONTEXTOS_PERMITIDOS else CONTEXT_PADRAO
+    if not ram or not ram.get("disponivel"):
+        return pedido, None
+
+    livre = int(ram["disponivel"])
+    if livre < RAM_FOLGA_BYTES:
+        livre_gb = livre / (1024 ** 3)
+        return None, {
+            "erro": True,
+            "msg": (
+                f"RAM livre critica ({livre_gb:.1f} GB). "
+                "Libere memoria (feche programas) antes de gerar — "
+                "folga minima de 500 MB pra nao travar o PC."
+            ),
+        }
+
+    seguro = sugerir_contexto(ram)
+    meta = next((c for c in CONTEXTOS if c["tokens"] == pedido), None)
+    need = int((meta or {}).get("ram_gb", 16) * (1024 ** 3))
+    if livre - need >= RAM_FOLGA_BYTES:
+        return pedido, None
+
+    aviso = {
+        "tipo": "aviso",
+        "hub": True,
+        "pedido": pedido,
+        "usado": seguro,
+        "msg": (
+            f"Contexto reduzido de {_label_ctx(pedido)} para {_label_ctx(seguro)} "
+            f"pra preservar ~500 MB de RAM livre e evitar travar o PC."
+        ),
+    }
+    return seguro, aviso
+
+
+def _label_ctx(tokens: int) -> str:
+    meta = next((c for c in CONTEXTOS if c["tokens"] == tokens), None)
+    return meta["label"] if meta else str(tokens)
 
 FOCOS = {
     "codigo": {
@@ -368,8 +509,9 @@ async def verificar_status(modelo: str = MODELO_PADRAO) -> dict:
         "modelo_disponivel": False,
         "modelos": [],
         "focos": list(FOCOS.values()),
-        "contextos": CONTEXTOS,
+        "contextos": [{**c} for c in CONTEXTOS],
         "contexto_padrao": CONTEXT_PADRAO,
+        "contexto_sugerido": CONTEXT_PADRAO,
         "presets": [
             {**preset, "baixado": False} for preset in MODELOS_PRESET
         ],
@@ -390,15 +532,120 @@ async def verificar_status(modelo: str = MODELO_PADRAO) -> dict:
         info["msg"] = "Ollama nao esta rodando em localhost:11434"
     except Exception as e:
         info["msg"] = f"Erro ao consultar Ollama: {e}"
+    info["ram"] = obter_ram()
+    sugerido = sugerir_contexto(info["ram"])
+    info["contexto_sugerido"] = sugerido
+    info["ram_folga_bytes"] = RAM_FOLGA_BYTES
+    for c in info["contextos"]:
+        c["indicado"] = c["tokens"] == sugerido
+    info["contexto_padrao"] = sugerido
     return info
 
 
+def _ollama_ja_responde() -> bool:
+    try:
+        with httpx.Client(timeout=1.5) as client:
+            r = client.get(f"{OLLAMA_BASE_URL}/api/tags")
+            return r.status_code == 200
+    except Exception:
+        return False
+
+
+def _create_no_window() -> int:
+    return 0x08000000 if platform.system() == "Windows" else 0
+
+
+def _exe_app_ollama_windows(cli_exe: str) -> str | None:
+    """App de bandeja (GUI) — evita o flash de terminal do `ollama serve`."""
+    pasta = Path(cli_exe).resolve().parent
+    app = pasta / "ollama app.exe"
+    if app.is_file():
+        return str(app)
+    return None
+
+
+def _processos_comando(nome_exe: str) -> list[str]:
+    if platform.system() != "Windows":
+        return []
+    try:
+        out = subprocess.check_output(
+            [
+                "powershell",
+                "-NoProfile",
+                "-Command",
+                f"Get-CimInstance Win32_Process -Filter \"Name='{nome_exe}'\" "
+                "| Select-Object -ExpandProperty CommandLine",
+            ],
+            text=True,
+            errors="ignore",
+            creationflags=_create_no_window(),
+            timeout=8,
+        )
+        return [l.strip() for l in out.splitlines() if l.strip()]
+    except Exception:
+        return []
+
+
+def _ollama_app_rodando() -> bool:
+    return bool(_processos_comando("ollama app.exe"))
+
+
+def _ollama_eh_serve_cli() -> bool:
+    """True se ha `ollama.exe serve` sem o app de bandeja (modo que abre terminais)."""
+    if platform.system() != "Windows":
+        return False
+    if _ollama_app_rodando():
+        return False
+    for linha in _processos_comando("ollama.exe"):
+        low = linha.lower()
+        if "serve" in low:
+            return True
+    return False
+
+
+def _encerrar_ollama_windows() -> None:
+    flags = _create_no_window()
+    for imagem in ("llama-server.exe", "ollama.exe"):
+        subprocess.run(
+            ["taskkill", "/F", "/IM", imagem, "/T"],
+            capture_output=True,
+            creationflags=flags,
+            timeout=15,
+        )
+
+
+def _iniciar_app_bandeja(app: str) -> dict:
+    """Sobe o Ollama pelo app GUI (sem janela preta nos runners)."""
+    os.startfile(app)  # type: ignore[attr-defined]
+    for _ in range(30):
+        time.sleep(0.5)
+        if _ollama_ja_responde():
+            return {"ok": True, "exe": app, "modo": "app"}
+    return {"ok": True, "exe": app, "modo": "app", "aguardando": True}
+
+
 def iniciar_servico_ollama() -> dict:
-    """Sobe `ollama serve` em background se o binario estiver instalado."""
+    """Sobe o Ollama em background se o binario estiver instalado."""
     exe = detectar_ollama_instalado()
     if not exe:
         return {"ok": False, "msg": "Ollama nao esta instalado"}
+
     try:
+        if platform.system() == "Windows":
+            app = _exe_app_ollama_windows(exe)
+            if app:
+                # `ollama serve` faz o llama-server abrir terminal a cada pergunta.
+                # Se estiver nesse modo, encerra e sobe pelo app de bandeja.
+                if _ollama_ja_responde() and not _ollama_eh_serve_cli():
+                    return {"ok": True, "exe": app, "ja_ativo": True, "modo": "app"}
+                if _ollama_ja_responde() and _ollama_eh_serve_cli():
+                    _encerrar_ollama_windows()
+                    time.sleep(0.8)
+                return _iniciar_app_bandeja(app)
+
+        if _ollama_ja_responde():
+            return {"ok": True, "exe": exe, "ja_ativo": True}
+
         kwargs: dict = {
             "stdout": subprocess.DEVNULL,
             "stderr": subprocess.DEVNULL,
@@ -406,14 +653,37 @@ def iniciar_servico_ollama() -> dict:
         }
         if platform.system() == "Windows":
             kwargs["creationflags"] = (
-                subprocess.CREATE_NEW_PROCESS_GROUP | 0x00000008
+                subprocess.CREATE_NEW_PROCESS_GROUP
+                | _create_no_window()
+                | 0x00000008
             )
         else:
             kwargs["start_new_session"] = True
         subprocess.Popen([exe, "serve"], **kwargs)
-        return {"ok": True, "exe": exe}
+        return {"ok": True, "exe": exe, "modo": "serve"}
     except Exception as e:
         return {"ok": False, "msg": f"Falha ao iniciar Ollama: {e}"}
+
+
+def corrigir_modo_console_windows() -> dict | None:
+    """Se o Ollama estiver em `serve` (CLI), troca pelo app de bandeja.
+
+    Retorna dict com resultado, ou None se nao aplicavel.
+    """
+    if platform.system() != "Windows":
+        return None
+    exe = detectar_ollama_instalado()
+    if not exe:
+        return None
+    app = _exe_app_ollama_windows(exe)
+    if not app or not _ollama_ja_responde() or not _ollama_eh_serve_cli():
+        return None
+    try:
+        _encerrar_ollama_windows()
+        time.sleep(0.8)
+        return _iniciar_app_bandeja(app)
+    except Exception as e:
+        return {"ok": False, "msg": str(e)}
 
 
 async def stream_install_ollama() -> AsyncIterator[bytes]:
@@ -614,7 +884,19 @@ async def stream_chat(
         msgs.append({"role": "system", "content": _system_prompt_para(modelo)})
     msgs.extend(mensagens)
 
-    ctx = num_ctx if num_ctx in CONTEXTOS_PERMITIDOS else CONTEXT_PADRAO
+    ram = obter_ram()
+    ctx, aviso = limitar_contexto(num_ctx, ram)
+    if aviso and aviso.get("erro"):
+        yield aviso
+        return
+    if ctx is None:
+        yield {
+            "erro": True,
+            "msg": "Nao foi possivel escolher um contexto seguro com a RAM atual.",
+        }
+        return
+    if aviso:
+        yield aviso
 
     payload = {
         "model": modelo,
@@ -641,7 +923,25 @@ async def stream_chat(
                     }
                     return
 
+                ultimo_check = time.monotonic()
                 async for linha in resp.aiter_lines():
+                    agora = time.monotonic()
+                    if agora - ultimo_check >= 1.5:
+                        ultimo_check = agora
+                        atual = obter_ram()
+                        if atual and atual["disponivel"] < RAM_FOLGA_BYTES:
+                            livre_gb = atual["disponivel"] / (1024 ** 3)
+                            yield {
+                                "erro": True,
+                                "parcial": True,
+                                "msg": (
+                                    f"Geracao interrompida: so restavam {livre_gb:.1f} GB de RAM "
+                                    "(folga minima 500 MB). Assim o PC nao trava — "
+                                    "feche programas ou use um contexto menor."
+                                ),
+                            }
+                            return
+
                     if not linha:
                         continue
                     try:

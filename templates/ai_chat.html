@@ -4,36 +4,9 @@
 {% block body_class %}page-ai-chat{% endblock %}
 
 {% block content %}
-<nav aria-label="breadcrumb" class="mb-3 ai-chat-page__topo">
-    <ol class="breadcrumb mb-0">
-        <li class="breadcrumb-item"><a href="/">Inicio</a></li>
-        <li class="breadcrumb-item active" aria-current="page">{{ tool.nome }}</li>
-    </ol>
-</nav>
-
-<div class="page-head justify-content-between ai-chat-page__topo">
-    <div class="d-flex align-items-start gap-3 flex-grow-1 min-w-0">
-        <a href="/" class="btn btn-outline-secondary page-head__back" title="Voltar">
-            <i class="bi bi-chevron-left"></i>
-        </a>
-        <div class="flex-grow-1 min-w-0">
-            <h1 class="hub-title h4 mb-1"><i class="bi {{ tool.icone }} me-2 text-primary"></i>{{ tool.nome }}</h1>
-            <p class="hub-subtitle mb-0">{{ tool.descricao }}</p>
-        </div>
-    </div>
-    <div class="d-flex align-items-center gap-2 flex-shrink-0">
-        <button type="button" class="btn btn-sm btn-limpar btn-limpar-escopo" data-escopo="ai-chat" title="Apagar todas as conversas">
-            <i class="bi bi-trash3"></i> <span class="btn-limpar-escopo-label">Limpar</span>
-        </button>
-        <span id="ai-status-badge" class="badge text-bg-secondary" title="Status do Ollama">
-            <i class="bi bi-circle-fill me-1"></i> verificando...
-        </span>
-    </div>
-</div>
-
-<div id="ai-gate" class="card hub-card mb-4 d-none">
+<div id="ai-gate" class="card hub-card ai-gate d-none">
     <div class="card-body py-4 px-4">
-        <div class="d-flex justify-content-end mb-2">
+        <div class="d-flex justify-content-start mb-3">
             <button id="ai-btn-voltar" class="btn btn-sm btn-outline-secondary d-none" type="button">
                 <i class="bi bi-chevron-left me-1"></i> Voltar ao chat
             </button>
@@ -75,12 +48,39 @@
 
 <div id="ai-chat" class="ai-chat d-none">
     <aside class="ai-chat__sidebar">
-        <button id="ai-novo-chat" class="btn btn-primary w-100 mb-3">
+        <div class="ai-chat__sidebar-topo">
+            <a href="/" class="btn btn-outline-secondary page-head__back" title="Voltar">
+                <i class="bi bi-chevron-left"></i>
+            </a>
+            <div class="ai-chat__sidebar-brand min-w-0">
+                <h1 class="ai-chat__sidebar-titulo">
+                    <i class="bi {{ tool.icone }} text-primary"></i>
+                    <span>{{ tool.nome }}</span>
+                </h1>
+                <p class="ai-chat__sidebar-desc">{{ tool.descricao }}</p>
+            </div>
+        </div>
+
+        <div class="ai-chat__sidebar-meta">
+            <span id="ai-status-badge" class="badge text-bg-secondary" title="Status do Ollama">
+                <i class="bi bi-circle-fill me-1"></i> verificando...
+            </span>
+            <button type="button" class="btn btn-sm btn-limpar btn-limpar-escopo" data-escopo="ai-chat" title="Apagar todas as conversas">
+                <i class="bi bi-trash3"></i> <span class="btn-limpar-escopo-label">Limpar</span>
+            </button>
+        </div>
+
+        <button id="ai-novo-chat" class="btn btn-primary w-100">
             <i class="bi bi-plus-lg me-1"></i> Nova conversa
         </button>
+
         <div class="ai-chat__list" id="ai-lista-chats">
             <div class="text-secondary small text-center py-3">Sem conversas ainda.</div>
         </div>
+
+        <button id="ai-btn-gerenciar" class="btn btn-sm btn-outline-secondary w-100 ai-chat__sidebar-foot" title="Configurar modelos">
+            <i class="bi bi-hdd-stack me-1"></i> Configurar Modelos
+        </button>
     </aside>
 
     <section class="ai-chat__main">
@@ -99,12 +99,10 @@
                             <i class="bi bi-info-circle"></i>
                         </button>
                     </span>
+                    <span id="ai-ram-livre" class="ai-chat__ram d-none" title="Memoria RAM livre no sistema"></span>
                 </small>
             </div>
             <div class="d-flex gap-2">
-                <button id="ai-btn-gerenciar" class="btn btn-sm btn-outline-secondary" title="Configurar modelos">
-                    <i class="bi bi-hdd-stack me-1"></i> Configurar Modelos
-                </button>
                 <button id="ai-btn-renomear" class="btn btn-sm btn-outline-secondary d-none" title="Renomear">
                     <i class="bi bi-pencil"></i>
                 </button>
@@ -127,13 +125,12 @@
                 </p>
                 <ul class="small mb-2 ps-3">
                     <li><strong>4k–8k</strong> — perguntas curtas, pouca RAM</li>
-                    <li><strong>16k–32k</strong> — codigo / uso diario (recomendado: 32k, ~16 GB RAM)</li>
-                    <li><strong>64k+</strong> — logs grandes; sobe o uso de RAM (e VRAM na GPU)</li>
+                    <li><strong>16k</strong> — codigo diario com ~8 GB livres</li>
+                    <li><strong>32k+</strong> — historico longo; sobe o uso de RAM (e VRAM na GPU)</li>
                 </ul>
                 <p class="small text-secondary mb-0">
-                    Regra pratica: comece em <strong>32k</strong>. Se ficar lento ou travar, diminua.
-                    Os GB do seletor sao de <strong>memoria RAM</strong> do PC (nao tamanho do modelo).
-                    Se colar arquivos grandes e o modelo &quot;esquecer&quot; o inicio, aumente.
+                    O seletor marca <strong>sugerido</strong> com base na RAM livre agora.
+                    Se escolher um valor acima, o indicador avisa — pode ficar lento ou travar.
                 </p>
             </div>
         </div>

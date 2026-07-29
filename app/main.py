@@ -632,7 +632,20 @@ async def api_ai_mensagem(chat_id: int, request: Request):
 
         partes: list[str] = []
         async for chunk in ai.stream_chat(modelo_ok, historico, num_ctx=num_ctx_ok):
+            if chunk.get("hub") and chunk.get("tipo") == "aviso":
+                yield (json.dumps({
+                    "tipo": "aviso",
+                    "msg": chunk.get("msg"),
+                    "pedido": chunk.get("pedido"),
+                    "usado": chunk.get("usado"),
+                }) + "\n").encode("utf-8")
+                continue
             if chunk.get("erro"):
+                # Se ja veio texto parcial, salva o que deu pra gerar
+                if chunk.get("parcial") and partes:
+                    parcial = "".join(partes).strip()
+                    if parcial:
+                        db.adicionar_mensagem(chat_id, "assistant", parcial)
                 yield (
                     json.dumps({"tipo": "erro", "msg": chunk.get("msg", "Erro desconhecido")}) + "\n"
                 ).encode("utf-8")

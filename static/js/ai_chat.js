@@ -23,6 +23,7 @@
     const btnCtxInfo = document.getElementById('ai-btn-ctx-info');
     const ctxInfo = document.getElementById('ai-ctx-info');
     const btnCtxFechar = document.getElementById('ai-btn-ctx-fechar');
+    const ramLivreEl = document.getElementById('ai-ram-livre');
     const btnGerenciar = document.getElementById('ai-btn-gerenciar');
     const btnRenomear = document.getElementById('ai-btn-renomear');
     const btnExcluir = document.getElementById('ai-btn-excluir');
@@ -82,11 +83,77 @@
         return (b / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
     }
 
+    function formatGb(bytes) {
+        if (!bytes && bytes !== 0) return '-';
+        const gb = bytes / (1024 * 1024 * 1024);
+        if (gb >= 10) return gb.toFixed(0) + ' GB';
+        return gb.toFixed(1) + ' GB';
+    }
+
+    function livreGbUtil(ram) {
+        if (!ram || !ram.disponivel) return null;
+        return ram.disponivel / (1024 * 1024 * 1024);
+    }
+
+    function folgaGb() {
+        const bytes = (ultimoStatus && ultimoStatus.ram_folga_bytes) || (500 * 1024 * 1024);
+        return bytes / (1024 * 1024 * 1024);
+    }
+
+    function contextoExcedeRam(ctx, ram) {
+        const livre = livreGbUtil(ram);
+        if (livre == null || !ctx || ctx.ram_gb == null) return false;
+        return ctx.ram_gb + folgaGb() > livre;
+    }
+
+    function rotuloContexto(c, sugerido, ram) {
+        const base = `${c.label} — ${c.nome}`;
+        const ramTxt = c.ram ? ` (${c.ram})` : '';
+        if (c.tokens === sugerido) return `${base}${ramTxt} · sugerido`;
+        if (contextoExcedeRam(c, ram)) return `${base}${ramTxt} · acima da RAM livre`;
+        return `${base}${ramTxt}`;
+    }
+
+    function atualizarRam(ram, opts) {
+        if (!ramLivreEl) return;
+        if (!ram || !ram.disponivel) {
+            ramLivreEl.classList.add('d-none');
+            ramLivreEl.textContent = '';
+            return;
+        }
+        const livre = formatGb(ram.disponivel);
+        const total = formatGb(ram.total);
+        const pctLivre = ram.total
+            ? Math.round((ram.disponivel / ram.total) * 100)
+            : 0;
+        const lista = (opts && opts.contextos) || (ultimoStatus && ultimoStatus.contextos) || [];
+        const tokens = opts && opts.tokens != null
+            ? opts.tokens
+            : (ctxSelect ? parseInt(ctxSelect.value, 10) : NaN);
+        const atual = lista.find((c) => c.tokens === tokens);
+        const excede = contextoExcedeRam(atual, ram);
+
+        ramLivreEl.classList.remove('d-none', 'ai-chat__ram--baixa', 'ai-chat__ram--ok', 'ai-chat__ram--aviso');
+        if (excede) {
+            ramLivreEl.classList.add('ai-chat__ram--aviso');
+            ramLivreEl.innerHTML =
+                `<i class="bi bi-memory me-1"></i>RAM livre: <strong>${livre}</strong> / ${total}` +
+                ` <span class="ai-chat__ram-aviso">· contexto pode passar</span>`;
+            ramLivreEl.title =
+                `O contexto selecionado estima ~${atual.ram_gb} GB; ha ${livre} livres (${pctLivre}%). Pode ficar lento ou travar.`;
+        } else {
+            ramLivreEl.classList.add(pctLivre < 20 ? 'ai-chat__ram--baixa' : 'ai-chat__ram--ok');
+            ramLivreEl.innerHTML = `<i class="bi bi-memory me-1"></i>RAM livre: <strong>${livre}</strong> / ${total}`;
+            ramLivreEl.title = `Memoria RAM disponivel no sistema (${pctLivre}% livre)`;
+        }
+    }
+
     async function verificarStatus() {
         try {
             const resp = await fetch('/api/ai/status');
             const data = await resp.json();
             ultimoStatus = data;
+            atualizarRam(data.ram);
 
             if (!data.ollama_ativo) {
                 setStatus('erro', 'Ollama offline');
@@ -138,12 +205,20 @@
                     { presets: true, presetsData: data.presets, gerenciar: true, voltar: true }
                 );
                 atualizarSeletorModelo(data.presets);
-                atualizarSeletorContexto(data.contextos, data.contexto_padrao);
+                atualizarSeletorContexto(data.contextos, data.contexto_sugerido || data.contexto_padrao, {
+                    ram: data.ram,
+                    sugerido: data.contexto_sugerido,
+                    ajustarSelect: true,
+                });
                 return true;
             }
             esconderGate();
             atualizarSeletorModelo(data.presets);
-            atualizarSeletorContexto(data.contextos, data.contexto_padrao);
+            atualizarSeletorContexto(data.contextos, data.contexto_sugerido || data.contexto_padrao, {
+                ram: data.ram,
+                sugerido: data.contexto_sugerido,
+                ajustarSelect: true,
+            });
             return true;
         } catch (err) {
             setStatus('erro', 'Erro ao verificar');
@@ -258,24 +333,46 @@
         localStorage.setItem(LS_MODELO, modeloSelect.value);
     }
 
-    function atualizarSeletorContexto(contextos, padrao) {
+    function atualizarSeletorContexto(contextos, padrao, opts) {
         if (!ctxSelect) return;
+        const opcoes = opts || {};
+        const ram = opcoes.ram || (ultimoStatus && ultimoStatus.ram) || null;
         const lista = contextos && contextos.length
             ? contextos
-            : [{ tokens: CTX_PADRAO, label: '32k', nome: 'Recomendado', indicado: true, ram: '' }];
-        const padraoCtx = padrao || CTX_PADRAO;
+            : [{ tokens: CTX_PADRAO, label: '32k', nome: 'Equilibrado', indicado: false, ram: '~16 GB', ram_gb: 16 }];
+        const sugerido = opcoes.sugerido
+            || (lista.find((c) => c.indicado) || {}).tokens
+            || padrao
+            || CTX_PADRAO;
+        const valorAtual = parseInt(ctxSelect.value || '', 10);
         const salvo = parseInt(localStorage.getItem(LS_CTX) || '', 10);
+        const ajustar = !!opcoes.ajustarSelect;
+
         ctxSelect.innerHTML = lista.map((c) => {
             const tip = c.descricao || '';
-            const ram = c.ram ? ` (${c.ram})` : '';
-            const texto = c.indicado
-                ? `${c.label} — Recomendado${ram}`
-                : `${c.label} — ${c.nome}${ram}`;
+            const texto = rotuloContexto(c, sugerido, ram);
             return `<option value="${c.tokens}" title="${escapeHtml(tip)}">${escapeHtml(texto)}</option>`;
         }).join('');
-        const valido = lista.find(c => c.tokens === salvo);
-        ctxSelect.value = String(valido ? salvo : padraoCtx);
-        localStorage.setItem(LS_CTX, ctxSelect.value);
+
+        let escolhido = null;
+        if (ajustar) {
+            const salvoOk = lista.find((c) => c.tokens === salvo);
+            if (salvoOk && !contextoExcedeRam(salvoOk, ram)) {
+                escolhido = salvo;
+            } else {
+                escolhido = sugerido;
+            }
+        } else if (lista.some((c) => c.tokens === valorAtual)) {
+            escolhido = valorAtual;
+        } else if (lista.some((c) => c.tokens === salvo)) {
+            escolhido = salvo;
+        } else {
+            escolhido = sugerido;
+        }
+
+        ctxSelect.value = String(escolhido);
+        if (ajustar) localStorage.setItem(LS_CTX, ctxSelect.value);
+        atualizarRam(ram, { contextos: lista, tokens: escolhido });
     }
 
     function modeloAtual() {
@@ -298,6 +395,9 @@
     if (ctxSelect) {
         ctxSelect.addEventListener('change', () => {
             localStorage.setItem(LS_CTX, ctxSelect.value);
+            const ram = ultimoStatus && ultimoStatus.ram;
+            const lista = (ultimoStatus && ultimoStatus.contextos) || [];
+            atualizarRam(ram, { contextos: lista, tokens: parseInt(ctxSelect.value, 10) });
         });
     }
 
@@ -470,6 +570,30 @@
         }
     });
 
+    async function aplicarStatusPronto(st) {
+        ultimoStatus = st;
+        atualizarRam(st.ram);
+        pullWrap.classList.add('d-none');
+        const algumBaixado = (st.presets || []).some(p => p.baixado);
+        if (!algumBaixado) {
+            setStatus('warn', 'Nenhum modelo');
+            mostrarGate('Escolha um modelo',
+                'Nenhum modelo foi baixado ainda. Selecione abaixo qual instalar.',
+                { presets: true, presetsData: st.presets }
+            );
+            return false;
+        }
+        setStatus('ok', 'Pronto');
+        atualizarSeletorModelo(st.presets);
+        atualizarSeletorContexto(st.contextos, st.contexto_sugerido || st.contexto_padrao, {
+            ram: st.ram,
+            sugerido: st.contexto_sugerido,
+            ajustarSelect: true,
+        });
+        esconderGate();
+        return true;
+    }
+
     btnIniciar.addEventListener('click', async () => {
         btnIniciar.disabled = true;
         gateErro.classList.add('d-none');
@@ -478,19 +602,27 @@
             const data = await resp.json();
             if (!resp.ok || !data.ok) throw new Error(data.msg || ('HTTP ' + resp.status));
             pullWrap.classList.remove('d-none');
-            pullStatus.textContent = 'Aguardando Ollama iniciar...';
-            pullDetalhe.textContent = '';
+            pullDetalhe.textContent = 'O app do Ollama pode abrir em segundo plano.';
             pullBar.style.width = '100%';
             pullPercent.textContent = '';
 
-            for (let i = 0; i < 20; i++) {
+            const maxTentativas = 60;
+            for (let i = 1; i <= maxTentativas; i++) {
+                pullStatus.textContent = `Aguardando Ollama iniciar... (${i}/${maxTentativas})`;
                 await new Promise(r => setTimeout(r, 1000));
-                const ok = await verificarStatus();
-                if (ok) return;
-                const st = await (await fetch('/api/ai/status')).json();
-                if (st.ollama_ativo) return;
+                let st;
+                try {
+                    const respSt = await fetch('/api/ai/status');
+                    st = await respSt.json();
+                } catch (_) {
+                    continue;
+                }
+                if (!st.ollama_ativo) continue;
+                btnIniciar.disabled = false;
+                await aplicarStatusPronto(st);
+                return;
             }
-            throw new Error('Ollama nao respondeu a tempo. Tente novamente.');
+            throw new Error('Ollama nao respondeu a tempo. Abra o app Ollama e tente novamente.');
         } catch (err) {
             exibirErro(err.message);
             btnIniciar.disabled = false;
@@ -852,6 +984,11 @@
                         renderMarkdown(corpoAssistente, acumulado);
                         corpoAssistente.appendChild(cursor);
                         rolarFinal();
+                    } else if (ev.tipo === 'aviso') {
+                        const nota = document.createElement('div');
+                        nota.className = 'ai-chat__aviso-ram small text-warning mb-2';
+                        nota.innerHTML = `<i class="bi bi-exclamation-triangle me-1"></i>${escapeHtml(ev.msg || 'Contexto limitado pela RAM.')}`;
+                        wrapAssistente.insertBefore(nota, corpoAssistente);
                     } else if (ev.tipo === 'erro') {
                         throw new Error(ev.msg || 'Erro do modelo');
                     } else if (ev.tipo === 'fim') {
@@ -864,7 +1001,15 @@
             }
         } catch (err) {
             cursor.remove();
-            corpoAssistente.innerHTML = `<span class="text-danger">Erro: ${escapeHtml(err.message)}</span>`;
+            if (acumulado) {
+                renderMarkdown(corpoAssistente, acumulado);
+                const errEl = document.createElement('div');
+                errEl.className = 'text-danger small mt-2';
+                errEl.textContent = 'Interrompido: ' + err.message;
+                wrapAssistente.appendChild(errEl);
+            } else {
+                corpoAssistente.innerHTML = `<span class="text-danger">Erro: ${escapeHtml(err.message)}</span>`;
+            }
         } finally {
             enviando = false;
             input.disabled = false;
@@ -883,6 +1028,29 @@
     });
 
     verificarStatus();
+    setInterval(() => {
+        if (document.hidden) return;
+        fetch('/api/ai/status')
+            .then((r) => r.json())
+            .then((data) => {
+                if (ultimoStatus) {
+                    ultimoStatus.ram = data.ram;
+                    ultimoStatus.contexto_sugerido = data.contexto_sugerido;
+                    if (data.contextos) ultimoStatus.contextos = data.contextos;
+                }
+                // Atualiza labels/aviso sem forcar troca do select
+                if (ctxSelect && !ctxSelect.classList.contains('d-none') && data.contextos) {
+                    atualizarSeletorContexto(data.contextos, data.contexto_sugerido || data.contexto_padrao, {
+                        ram: data.ram,
+                        sugerido: data.contexto_sugerido,
+                        ajustarSelect: false,
+                    });
+                } else {
+                    atualizarRam(data.ram);
+                }
+            })
+            .catch(() => {});
+    }, 10000);
 
     window.aiRecarregarAposLimpar = function () {
         chatAtual = null;
