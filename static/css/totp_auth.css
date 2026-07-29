@@ -1,0 +1,66 @@
+.totp-card {
+    background: var(--hub-surface);
+    border: 1px solid var(--hub-border);
+    border-radius: var(--hub-radius-sm);
+    padding: 1rem 1.1rem;
+    margin-bottom: 0.75rem;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 0.75rem 1rem;
+    align-items: center;
+}
+
+.totp-card__issuer {
+    font-weight: 600;
+    margin-bottom: 0.1rem;
+}
+
+.totp-card__label {
+    color: var(--hub-muted);
+    font-size: 0.8125rem;
+    word-break: break-all;
+}
+
+.totp-card__code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 1.65rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    line-height: 1.1;
+    cursor: pointer;
+    user-select: all;
+}
+
+.totp-card__code:hover {
+    color: var(--hub-blue);
+}
+
+.totp-card__right {
+    text-align: right;
+    min-width: 7.5rem;
+}
+
+.totp-card__timer {
+    height: 4px;
+    border-radius: 2px;
+    background: rgba(255, 255, 255, 0.08);
+    margin-top: 0.45rem;
+    overflow: hidden;
+}
+
+.totp-card__timer-bar {
+    height: 100%;
+    background: var(--hub-blue);
+    transition: width 0.25s linear;
+}
+
+.totp-card__timer-bar.is-urgent {
+    background: #e35d6a;
+}
+
+.totp-card__acoes {
+    grid-column: 1 / -1;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+}

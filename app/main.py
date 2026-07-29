@@ -189,6 +189,18 @@ def tool_page(request: Request, slug: str):
             {"request": request, "tool": tool},
         )
 
+    if slug == "fake-data":
+        return templates.TemplateResponse(
+            "fake_data.html",
+            {"request": request, "tool": tool},
+        )
+
+    if slug == "totp-auth":
+        return templates.TemplateResponse(
+            "totp_auth.html",
+            {"request": request, "tool": tool},
+        )
+
     return templates.TemplateResponse(
         "tool.html",
         {"request": request, "tool": tool, "controles": tool.get("controles", "none")},
@@ -393,60 +405,82 @@ def api_remover_senha(senha_id: int):
     return {"ok": True, "senhas": db.listar_senhas()}
 
 
-def _cofre_ok():
-    if not registry.extra_instalado("cofre"):
-        raise HTTPException(status_code=404, detail="Cofre nao instalado. Abra a Loja.")
+_VAULT_EXTRAS = {
+    "cofre": {"extra": "cofre", "label": "Cofre"},
+    "fake": {"extra": "fake", "label": "Dados fake"},
+    "totp": {"extra": "totp", "label": "Authenticator"},
+}
 
 
-@app.get("/api/cofre")
-def api_cofre_listar():
-    _cofre_ok()
-    from . import vault_store
-    return vault_store.listar()
+def _vault_ok(kind: str) -> None:
+    meta = _VAULT_EXTRAS.get(kind)
+    if not meta or not registry.extra_instalado(meta["extra"]):
+        raise HTTPException(
+            status_code=404,
+            detail=f"{(meta or {}).get('label', 'Extra')} nao instalado. Abra a Loja.",
+        )
 
 
-@app.post("/api/cofre")
-def api_cofre_criar(payload: dict = Body(...)):
-    _cofre_ok()
-    from . import vault_store
-    return vault_store.criar(payload.get("nome", ""), payload.get("blob", ""))
+def _register_vault_api(kind: str, prefix: str) -> None:
+    def api_listar():
+        _vault_ok(kind)
+        from . import vault_store
+        return vault_store.listar(kind)
+
+    def api_criar(payload: dict = Body(...)):
+        _vault_ok(kind)
+        from . import vault_store
+        return vault_store.criar(payload.get("nome", ""), payload.get("blob", ""), kind=kind)
+
+    async def api_importar(arquivo: UploadFile = File(...), nome: str = Form(None)):
+        _vault_ok(kind)
+        from . import vault_store
+        return await vault_store.importar(arquivo, nome, kind=kind)
+
+    def api_obter(vault_id: str):
+        _vault_ok(kind)
+        from . import vault_store
+        return vault_store.obter(vault_id, kind=kind)
+
+    def api_atualizar(vault_id: str, payload: dict = Body(...)):
+        _vault_ok(kind)
+        from . import vault_store
+        return vault_store.atualizar(
+            vault_id, payload.get("blob", ""), payload.get("nome"), kind=kind
+        )
+
+    def api_excluir(vault_id: str):
+        _vault_ok(kind)
+        from . import vault_store
+        vault_store.excluir(vault_id, kind=kind)
+        return {"ok": True}
+
+    def api_exportar(vault_id: str):
+        _vault_ok(kind)
+        from . import vault_store
+        path, nome = vault_store.caminho_export(vault_id, kind=kind)
+        return FileResponse(path, filename=nome, media_type="application/json")
+
+    api_listar.__name__ = f"api_{prefix}_listar"
+    api_criar.__name__ = f"api_{prefix}_criar"
+    api_importar.__name__ = f"api_{prefix}_importar"
+    api_obter.__name__ = f"api_{prefix}_obter"
+    api_atualizar.__name__ = f"api_{prefix}_atualizar"
+    api_excluir.__name__ = f"api_{prefix}_excluir"
+    api_exportar.__name__ = f"api_{prefix}_exportar"
+
+    app.get(f"/api/{prefix}")(api_listar)
+    app.post(f"/api/{prefix}")(api_criar)
+    app.post(f"/api/{prefix}/importar")(api_importar)
+    app.get(f"/api/{prefix}/{{vault_id}}")(api_obter)
+    app.put(f"/api/{prefix}/{{vault_id}}")(api_atualizar)
+    app.delete(f"/api/{prefix}/{{vault_id}}")(api_excluir)
+    app.get(f"/api/{prefix}/{{vault_id}}/exportar")(api_exportar)
 
 
-@app.post("/api/cofre/importar")
-async def api_cofre_importar(arquivo: UploadFile = File(...), nome: str = Form(None)):
-    _cofre_ok()
-    from . import vault_store
-    return await vault_store.importar(arquivo, nome)
-
-
-@app.get("/api/cofre/{vault_id}")
-def api_cofre_obter(vault_id: str):
-    _cofre_ok()
-    from . import vault_store
-    return vault_store.obter(vault_id)
-
-
-@app.put("/api/cofre/{vault_id}")
-def api_cofre_atualizar(vault_id: str, payload: dict = Body(...)):
-    _cofre_ok()
-    from . import vault_store
-    return vault_store.atualizar(vault_id, payload.get("blob", ""), payload.get("nome"))
-
-
-@app.delete("/api/cofre/{vault_id}")
-def api_cofre_excluir(vault_id: str):
-    _cofre_ok()
-    from . import vault_store
-    vault_store.excluir(vault_id)
-    return {"ok": True}
-
-
-@app.get("/api/cofre/{vault_id}/exportar")
-def api_cofre_exportar(vault_id: str):
-    _cofre_ok()
-    from . import vault_store
-    path, nome = vault_store.caminho_export(vault_id)
-    return FileResponse(path, filename=nome, media_type="application/json")
+_register_vault_api("cofre", "cofre")
+_register_vault_api("fake", "fake")
+_register_vault_api("totp", "totp")
 
 
 def _modelo_permitido(modelo: str | None) -> str:

@@ -1,0 +1,43 @@
+.fake-profile {
+    background: var(--hub-surface);
+    border: 1px solid var(--hub-border);
+    border-radius: var(--hub-radius-sm);
+    padding: 0.9rem 1rem;
+    margin-bottom: 0.65rem;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 0.75rem;
+    align-items: start;
+}
+
+.fake-profile__apelido {
+    font-weight: 600;
+    margin-bottom: 0.15rem;
+}
+
+.fake-profile__meta {
+    color: var(--hub-muted);
+    font-size: 0.8125rem;
+    word-break: break-word;
+}
+
+.fake-profile__acoes {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    justify-content: flex-end;
+}
+
+.fake-field-row {
+    display: flex;
+    gap: 0.35rem;
+    align-items: stretch;
+}
+
+.fake-field-row .form-control {
+    min-width: 0;
+}
+
+.fake-field-row .btn {
+    flex-shrink: 0;
+}

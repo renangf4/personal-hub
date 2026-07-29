@@ -3,8 +3,8 @@
 # Description: max ~350 chars. Topics: minusculas, max 20.
 
 description: >-
-  Hub local de utilitarios pessoais (FastAPI): midia, PDF, IA com Ollama,
-  DNS/Whois, criptografia AES-GCM e cofre de senhas - so em localhost.
+  Hub local de utilitarios (FastAPI): midia, PDF, IA, DNS/Whois, AES-GCM,
+  cofre, dados fake e authenticator TOTP — so em localhost.
 
 homepage: https://github.com/renangf4/personal-hub
 
@@ -20,5 +20,8 @@ topics:
   - encryption
   - aes-gcm
   - password-manager
+  - totp
+  - 2fa
+  - fake-data
   - web-crypto
   - bootstrap

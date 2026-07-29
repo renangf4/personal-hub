@@ -151,7 +151,16 @@ def home_itens() -> list[dict]:
         itens.append({**CATEGORIAS["video"], "href": "/categoria/video", "escopo": "video"})
     if "imagem" in CATEGORIAS:
         itens.append({**CATEGORIAS["imagem"], "href": "/categoria/imagem", "escopo": "imagem"})
-    for slug in ("wp-screenshot", "unlock-pdf", "ai-chat", "rede-lookup", "gcm-crypto", "cofre-senhas"):
+    for slug in (
+        "wp-screenshot",
+        "unlock-pdf",
+        "ai-chat",
+        "rede-lookup",
+        "gcm-crypto",
+        "cofre-senhas",
+        "fake-data",
+        "totp-auth",
+    ):
         if slug in TOOLS:
             itens.append({**TOOLS[slug], "href": f"/tool/{slug}", "escopo": slug})
 
@@ -177,10 +186,38 @@ def home_itens() -> list[dict]:
 def listar_loja() -> list[dict[str, Any]]:
     from .cleanup import info_armazenamento
 
+    def _fmt_bytes(n: int) -> str:
+        if n < 1024:
+            return f"{n} B"
+        if n < 1024 * 1024:
+            return f"{n / 1024:.1f} KB"
+        return f"{n / (1024 * 1024):.2f} MB"
+
     itens = []
     for slug, extra in EXTRAS.items():
         escopo = extra.get("escopo_dados", slug)
         info = info_armazenamento(escopo)
+        persist = extra.get("persistencia") or {
+            "tipo": "nenhum",
+            "rotulo": "Nada gravado em disco",
+            "caminho": "—",
+        }
+        arquivos = info.get("arquivos", 0)
+        bytes_total = info.get("bytes", 0)
+        chats = info.get("chats", 0)
+        if persist.get("tipo") == "nenhum":
+            dados_resumo = "Sem persistencia"
+            tem_dados = False
+        elif escopo == "ai-chat":
+            dados_resumo = f"{chats} conversa(s)" if chats else "Vazio"
+            tem_dados = chats > 0
+        elif arquivos > 0:
+            dados_resumo = f"{arquivos} arquivo(s) · {_fmt_bytes(bytes_total)}"
+            tem_dados = True
+        else:
+            dados_resumo = "Vazio"
+            tem_dados = False
+
         itens.append({
             "slug": slug,
             "nome": extra["nome"],
@@ -189,9 +226,16 @@ def listar_loja() -> list[dict[str, Any]]:
             "packages": list(extra["packages"]),
             "instalado": extra_instalado(slug),
             "escopo_dados": escopo,
-            "dados_arquivos": info.get("arquivos", 0),
-            "dados_bytes": info.get("bytes", 0),
-            "dados_chats": info.get("chats", 0),
+            "dados_arquivos": arquivos,
+            "dados_bytes": bytes_total,
+            "dados_chats": chats,
+            "dados_resumo": dados_resumo,
+            "tem_dados": tem_dados,
+            "persistencia": {
+                "tipo": persist.get("tipo", "nenhum"),
+                "rotulo": persist.get("rotulo", ""),
+                "caminho": persist.get("caminho", "—"),
+            },
         })
     return itens
 

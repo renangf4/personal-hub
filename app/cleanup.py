@@ -18,6 +18,13 @@ ESCOPO_POR_SLUG = {
 ESCOPOS_ARQUIVO = ("video", "imagem", "wp-screenshot", "unlock-pdf")
 ESCOPO_AI = "ai-chat"
 ESCOPO_COFRE = "cofre-senhas"
+ESCOPO_FAKE = "fake-data"
+ESCOPO_TOTP = "totp-auth"
+ESCOPOS_VAULT = {
+    ESCOPO_COFRE: "cofre",
+    ESCOPO_FAKE: "fake",
+    ESCOPO_TOTP: "totp",
+}
 
 _SESSAO_RE = re.compile(r"^\d+_[a-f0-9]+$", re.I)
 _VIDEO_EXT = {".mp4", ".webm", ".mkv", ".mov", ".avi", ".m4v"}
@@ -147,9 +154,10 @@ def info_armazenamento(escopo: str | None = None) -> dict:
         chats = db.listar_chats()
         info["chats"] = len(chats)
         info["mensagens"] = sum(c.get("total_mensagens", 0) for c in chats)
-        cofre = vault_store.info_bytes()
-        info["arquivos"] += cofre["arquivos"]
-        info["bytes"] += cofre["bytes"]
+        for kind in ESCOPOS_VAULT.values():
+            vault = vault_store.info_bytes(kind)
+            info["arquivos"] += vault["arquivos"]
+            info["bytes"] += vault["bytes"]
         return info
 
     if escopo == ESCOPO_AI:
@@ -158,9 +166,9 @@ def info_armazenamento(escopo: str | None = None) -> dict:
         msgs = sum(c.get("total_mensagens", 0) for c in chats)
         return {"arquivos": len(chats), "bytes": 0, "chats": len(chats), "mensagens": msgs}
 
-    if escopo == ESCOPO_COFRE:
+    if escopo in ESCOPOS_VAULT:
         from . import vault_store
-        return vault_store.info_bytes()
+        return vault_store.info_bytes(ESCOPOS_VAULT[escopo])
 
     if escopo not in ESCOPOS_ARQUIVO:
         return {"arquivos": 0, "bytes": 0}
@@ -180,9 +188,10 @@ def executar_limpeza(escopo: str | None = None) -> dict:
             bytes_total += b
         from . import db, vault_store
         chats = db.limpar_chats()
-        cofre = vault_store.limpar_todos()
-        arquivos += cofre["arquivos"]
-        bytes_total += cofre["bytes"]
+        for kind in ESCOPOS_VAULT.values():
+            vault = vault_store.limpar_todos(kind)
+            arquivos += vault["arquivos"]
+            bytes_total += vault["bytes"]
         return {"arquivos": arquivos, "bytes": bytes_total, "chats": chats}
 
     if escopo == ESCOPO_AI:
@@ -190,9 +199,9 @@ def executar_limpeza(escopo: str | None = None) -> dict:
         chats = db.limpar_chats()
         return {"arquivos": 0, "bytes": 0, "chats": chats}
 
-    if escopo == ESCOPO_COFRE:
+    if escopo in ESCOPOS_VAULT:
         from . import vault_store
-        return vault_store.limpar_todos()
+        return vault_store.limpar_todos(ESCOPOS_VAULT[escopo])
 
     if escopo not in ESCOPOS_ARQUIVO:
         return {"arquivos": 0, "bytes": 0}

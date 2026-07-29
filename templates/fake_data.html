@@ -1,0 +1,173 @@
+{% extends "base.html" %}
+
+{% block title %}{{ tool.nome }} - Personal Hub{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="/static/css/cofre.css">
+<link rel="stylesheet" href="/static/css/fake_data.css">
+{% endblock %}
+
+{% block content %}
+<nav aria-label="breadcrumb" class="mb-3">
+    <ol class="breadcrumb mb-0">
+        <li class="breadcrumb-item"><a href="/">Inicio</a></li>
+        <li class="breadcrumb-item active" aria-current="page">{{ tool.nome }}</li>
+    </ol>
+</nav>
+
+<div class="page-head justify-content-between">
+    <div class="d-flex align-items-start gap-3">
+        <a href="/" class="btn btn-outline-secondary page-head__back" title="Voltar">
+            <i class="bi bi-chevron-left"></i>
+        </a>
+        <div>
+            <h1 class="hub-title h4 mb-1"><i class="bi {{ tool.icone }} me-2 text-primary"></i>{{ tool.nome }}</h1>
+            <p class="hub-subtitle mb-0">{{ tool.descricao }}</p>
+        </div>
+    </div>
+    <button type="button" class="btn btn-sm btn-limpar btn-limpar-escopo" data-escopo="{{ tool.slug }}" title="Apagar colecoes">
+        <i class="bi bi-trash3"></i> <span class="btn-limpar-escopo-label">Limpar</span>
+    </button>
+</div>
+
+<div class="alert alert-secondary small mb-4">
+    <i class="bi bi-shield-lock me-1"></i>
+    Perfis ficam em arquivo <code>.hubfake</code> criptografado. A senha-mestra so existe nesta aba.
+</div>
+
+<section class="cofre-lista" id="fake-view-lista">
+    <div class="d-flex flex-wrap gap-2 mb-3">
+        <button type="button" class="btn btn-primary" id="fake-btn-novo">
+            <i class="bi bi-plus-lg"></i> Nova colecao
+        </button>
+        <label class="btn btn-outline-secondary mb-0" for="fake-import-file">
+            <i class="bi bi-upload"></i> Importar
+        </label>
+        <input type="file" id="fake-import-file" class="d-none" accept=".hubfake,application/json">
+    </div>
+    <div class="cofre-grid" id="fake-grid"></div>
+    <p class="text-secondary small mt-3 mb-0 d-none" id="fake-vazio">Nenhuma colecao. Crie uma ou importe um <code>.hubfake</code>.</p>
+</section>
+
+<section class="cofre-aberto d-none" id="fake-view-aberto">
+    <div class="cofre-toolbar card hub-card mb-3">
+        <div class="card-body py-3 d-flex flex-wrap align-items-center gap-2 justify-content-between">
+            <div class="d-flex align-items-center gap-2 min-w-0">
+                <button type="button" class="btn btn-outline-secondary btn-sm" id="fake-btn-voltar" title="Bloquear e voltar">
+                    <i class="bi bi-lock"></i>
+                </button>
+                <div class="min-w-0">
+                    <div class="fw-semibold text-truncate" id="fake-titulo">—</div>
+                    <small class="text-secondary" id="fake-status">Desbloqueado nesta aba</small>
+                </div>
+            </div>
+            <div class="d-flex flex-wrap gap-2">
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="fake-btn-export" title="Baixar arquivo">
+                    <i class="bi bi-download"></i> Exportar
+                </button>
+                <button type="button" class="btn btn-sm btn-primary" id="fake-btn-gerar">
+                    <i class="bi bi-shuffle"></i> Gerar perfil
+                </button>
+                <button type="button" class="btn btn-sm btn-outline-danger" id="fake-btn-excluir-colecao">
+                    <i class="bi bi-trash3"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="mb-3">
+        <input type="search" class="form-control" id="fake-busca" placeholder="Buscar apelido, nome, e-mail...">
+    </div>
+
+    <div class="fake-profiles" id="fake-profiles"></div>
+    <p class="text-secondary small d-none" id="fake-profiles-vazio">Nenhum perfil. Gere o primeiro.</p>
+</section>
+
+{# Modal: nova colecao #}
+<div class="modal fade" id="fake-modal-novo" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title h5">Nova colecao</h2>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label" for="fake-novo-nome">Nome</label>
+                    <input type="text" class="form-control" id="fake-novo-nome" maxlength="80" placeholder="Ex.: Testes QA">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label" for="fake-novo-senha">Senha-mestra</label>
+                    <div class="input-group">
+                        <input type="password" class="form-control" id="fake-novo-senha" autocomplete="new-password">
+                        <button type="button" class="btn btn-outline-secondary js-fake-toggle" data-target="fake-novo-senha"><i class="bi bi-eye"></i></button>
+                    </div>
+                </div>
+                <div class="mb-0">
+                    <label class="form-label" for="fake-novo-senha2">Confirmar senha</label>
+                    <input type="password" class="form-control" id="fake-novo-senha2" autocomplete="new-password">
+                </div>
+                <div class="alert py-2 px-3 small mb-0 mt-3 d-none" id="fake-novo-forca" role="status"></div>
+                <div class="alert alert-danger small mt-3 d-none mb-0" id="fake-novo-erro"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-primary" id="fake-novo-salvar">Criar</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{# Modal: desbloquear #}
+<div class="modal fade" id="fake-modal-unlock" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title h5">Desbloquear <span id="fake-unlock-nome"></span></h2>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+            </div>
+            <div class="modal-body">
+                <label class="form-label" for="fake-unlock-senha">Senha-mestra</label>
+                <div class="input-group">
+                    <input type="password" class="form-control" id="fake-unlock-senha" autocomplete="current-password">
+                    <button type="button" class="btn btn-outline-secondary js-fake-toggle" data-target="fake-unlock-senha"><i class="bi bi-eye"></i></button>
+                </div>
+                <div class="alert alert-danger small mt-3 d-none mb-0" id="fake-unlock-erro"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-primary" id="fake-unlock-ok">Desbloquear</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{# Modal: perfil #}
+<div class="modal fade" id="fake-modal-perfil" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title h5" id="fake-perfil-titulo-modal">Perfil</h2>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="fake-perfil-id">
+                <div class="row g-3" id="fake-perfil-campos"></div>
+                <div class="alert alert-danger small mt-3 d-none mb-0" id="fake-perfil-erro"></div>
+            </div>
+            <div class="modal-footer justify-content-between">
+                <button type="button" class="btn btn-outline-danger d-none" id="fake-perfil-excluir">Excluir</button>
+                <div class="d-flex gap-2 ms-auto">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="button" class="btn btn-primary" id="fake-perfil-salvar">Salvar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/crypto_gcm.js"></script>
+<script src="/static/js/fake_data.js"></script>
+{% endblock %}

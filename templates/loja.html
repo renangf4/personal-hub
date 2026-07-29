@@ -12,7 +12,7 @@
     </nav>
     <span class="hub-kicker">Extras</span>
     <h1 class="hub-title h2 mb-1">Loja</h1>
-    <p class="hub-subtitle mb-0">Instale, remova pacotes ou apague dados gerados.</p>
+    <p class="hub-subtitle mb-0">Instale, remova pacotes ou apague dados gerados. Caminhos relativos a pasta do hub.</p>
 </div>
 
 <div id="loja-alerta" class="alert d-none" role="alert"></div>
@@ -35,15 +35,42 @@
                         {% endif %}
                     </div>
                 </div>
-                <p class="card-text text-secondary flex-grow-1 small">{{ extra.descricao }}</p>
-                <ul class="loja-pkgs list-unstyled small text-secondary mb-3">
-                    {% for pkg in extra.packages %}
-                    <li class="loja-pkgs__item">
-                        <i class="bi bi-box-seam"></i>
-                        <code>{{ pkg }}</code>
-                    </li>
-                    {% endfor %}
-                </ul>
+                <p class="card-text text-secondary small mb-3">{{ extra.descricao }}</p>
+
+                <dl class="loja-meta flex-grow-1 mb-3">
+                    <div class="loja-meta__row">
+                        <dt><i class="bi bi-box-seam"></i> Pacotes</dt>
+                        <dd>
+                            {% if extra.packages %}
+                            <ul class="loja-pkgs list-unstyled mb-0">
+                                {% for pkg in extra.packages %}
+                                <li><code>{{ pkg }}</code></li>
+                                {% endfor %}
+                            </ul>
+                            {% else %}
+                            <span class="text-secondary">Nenhum (roda no navegador)</span>
+                            {% endif %}
+                        </dd>
+                    </div>
+                    <div class="loja-meta__row">
+                        <dt><i class="bi bi-hdd"></i> Dados</dt>
+                        <dd>
+                            {% if extra.tem_dados %}
+                            <span class="badge text-bg-warning text-dark">{{ extra.dados_resumo }}</span>
+                            {% else %}
+                            <span class="badge text-bg-secondary">{{ extra.dados_resumo }}</span>
+                            {% endif %}
+                            {% if extra.persistencia.rotulo %}
+                            <div class="loja-meta__hint text-secondary">{{ extra.persistencia.rotulo }}</div>
+                            {% endif %}
+                        </dd>
+                    </div>
+                    <div class="loja-meta__row">
+                        <dt><i class="bi bi-folder2-open"></i> Onde</dt>
+                        <dd><code class="loja-meta__path">{{ extra.persistencia.caminho }}</code></dd>
+                    </div>
+                </dl>
+
                 <div class="d-flex flex-wrap gap-2">
                     {% if extra.instalado %}
                     <button type="button" class="btn btn-outline-danger btn-loja-desinstalar" data-slug="{{ extra.slug }}">
@@ -54,9 +81,11 @@
                         <i class="bi bi-download"></i> Instalar
                     </button>
                     {% endif %}
-                    <button type="button" class="btn btn-sm btn-limpar btn-loja-dados" data-escopo="{{ extra.escopo_dados }}" title="Apaga arquivos/conversas desta ferramenta">
+                    {% if extra.persistencia.tipo != 'nenhum' and extra.persistencia.tipo != 'config' %}
+                    <button type="button" class="btn btn-sm btn-limpar btn-loja-dados" data-escopo="{{ extra.escopo_dados }}" title="Apaga dados desta ferramenta">
                         <i class="bi bi-trash3"></i> <span class="btn-loja-dados-label">Deletar dados</span>
                     </button>
+                    {% endif %}
                 </div>
                 <pre class="loja-log form-control mt-3 mb-0 d-none small font-monospace"></pre>
             </div>

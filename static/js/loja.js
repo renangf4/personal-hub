@@ -46,6 +46,37 @@
         return 'Deletar dados';
     }
 
+    function metaHtml(extra) {
+        const persist = extra.persistencia || {};
+        const pkgs = (extra.packages || []).length
+            ? `<ul class="loja-pkgs list-unstyled mb-0">${(extra.packages || []).map((pkg) =>
+                `<li><code>${escapeHtml(pkg)}</code></li>`
+            ).join('')}</ul>`
+            : '<span class="text-secondary">Nenhum (roda no navegador)</span>';
+
+        const badgeCls = extra.tem_dados ? 'text-bg-warning text-dark' : 'text-bg-secondary';
+        const dadosBadge = `<span class="badge ${badgeCls}">${escapeHtml(extra.dados_resumo || '—')}</span>`;
+        const hint = persist.rotulo
+            ? `<div class="loja-meta__hint text-secondary">${escapeHtml(persist.rotulo)}</div>`
+            : '';
+
+        return `
+            <dl class="loja-meta flex-grow-1 mb-3">
+                <div class="loja-meta__row">
+                    <dt><i class="bi bi-box-seam"></i> Pacotes</dt>
+                    <dd>${pkgs}</dd>
+                </div>
+                <div class="loja-meta__row">
+                    <dt><i class="bi bi-hdd"></i> Dados</dt>
+                    <dd>${dadosBadge}${hint}</dd>
+                </div>
+                <div class="loja-meta__row">
+                    <dt><i class="bi bi-folder2-open"></i> Onde</dt>
+                    <dd><code class="loja-meta__path">${escapeHtml(persist.caminho || '—')}</code></dd>
+                </div>
+            </dl>`;
+    }
+
     async function lerStream(resp, onEvento) {
         const reader = resp.body.getReader();
         const decoder = new TextDecoder();
@@ -155,12 +186,7 @@
     }
 
     function renderCard(extra) {
-        const pkgs = (extra.packages || []).map((pkg) => `
-            <li class="loja-pkgs__item">
-                <i class="bi bi-box-seam"></i>
-                <code>${escapeHtml(pkg)}</code>
-            </li>
-        `).join('');
+        const persist = extra.persistencia || {};
         const status = extra.instalado
             ? '<span class="badge text-bg-success loja-status">Instalado</span>'
             : '<span class="badge text-bg-secondary loja-status">Disponivel</span>';
@@ -171,9 +197,12 @@
             : `<button type="button" class="btn btn-primary btn-loja-instalar" data-slug="${extra.slug}">
                    <i class="bi bi-download"></i> Instalar
                </button>`;
-        const dados = `<button type="button" class="btn btn-sm btn-limpar btn-loja-dados" data-escopo="${extra.escopo_dados}" title="Apaga arquivos/conversas desta ferramenta">
+        const mostraDados = persist.tipo !== 'nenhum' && persist.tipo !== 'config';
+        const dados = mostraDados
+            ? `<button type="button" class="btn btn-sm btn-limpar btn-loja-dados" data-escopo="${extra.escopo_dados}" title="Apaga dados desta ferramenta">
                 <i class="bi bi-trash3"></i> <span class="btn-loja-dados-label">${escapeHtml(labelDados(extra))}</span>
-            </button>`;
+            </button>`
+            : '';
 
         return `
         <div class="col-12 col-md-6" data-extra="${extra.slug}" data-escopo="${extra.escopo_dados}">
@@ -188,8 +217,8 @@
                             ${status}
                         </div>
                     </div>
-                    <p class="card-text text-secondary flex-grow-1 small">${escapeHtml(extra.descricao)}</p>
-                    <ul class="loja-pkgs list-unstyled small text-secondary mb-3">${pkgs}</ul>
+                    <p class="card-text text-secondary small mb-3">${escapeHtml(extra.descricao)}</p>
+                    ${metaHtml(extra)}
                     <div class="d-flex flex-wrap gap-2">${pacote}${dados}</div>
                     <pre class="loja-log form-control mt-3 mb-0 d-none small font-monospace"></pre>
                 </div>
@@ -209,7 +238,6 @@
         grid.innerHTML = (data.extras || []).map(renderCard).join('');
     }
 
-    // Atualiza labels de tamanho na carga inicial
     atualizarCards();
 
     grid.addEventListener('click', (e) => {

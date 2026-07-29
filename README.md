@@ -14,6 +14,8 @@ Instale sob demanda pela **Loja** (`/loja`):
 - **DNS e Whois** — DNS (incl. SPF/DMARC/CAA), Whois, IP/geo, HTTP/TLS, portas, ping/traceroute, crt.sh, RBL, Shodan / AbuseIPDB / VirusTotal (keys opcionais)
 - **Criptografar / Descriptografar** — AES-256-GCM no navegador (compativel com [gcm-encrypt-decrypt](https://github.com/renangf4/gcm-encrypt-decrypt))
 - **Cofre de senhas** — arquivo `.hubvault` criptografado no navegador; importar / exportar / excluir; senha-mestra nunca gravada
+- **Dados fake** — gera perfis editaveis (nome, e-mail, CPF...); colecao `.hubfake` criptografada; importar / exportar
+- **Authenticator 2FA** — codigos TOTP locais; vault `.hubtotp` criptografado pra backup em pendrive
 
 ## Requisitos
 
@@ -48,9 +50,10 @@ chmod +x start.sh
 ## Caracteristicas
 
 - **Porta 7777** (nao conflita com Apache/XAMPP, MySQL, Docker padrao).
-- **Loja** instala e remove pacotes opcionais sem sujar a raiz do projeto.
+- **Loja** instala e remove pacotes opcionais sem sujar a raiz do projeto; mostra deps, dados persistentes e o caminho em `storage/`.
 - **Limpeza por ferramenta** e botao global de limpar em `storage/`.
 - **SQLite local** em `storage/hub.db` (senhas PDF, chats IA, settings como key Shodan).
+- **Vaults criptografados** (`.hubvault`, `.hubfake`, `.hubtotp`) — ciphertext em disco; senha-mestra so no navegador.
 - **FFmpeg embutido** via `imageio-ffmpeg` (extra Video).
 - **Ollama** em `localhost:11434` para o Assistente de IA.
 - Home com ordem arrastavel das ferramentas.

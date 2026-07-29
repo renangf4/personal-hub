@@ -12,6 +12,11 @@ EXTRAS: dict[str, dict] = {
         "imports": ["imageio_ffmpeg"],
         "modulos": ["convert_video"],
         "escopo_dados": "video",
+        "persistencia": {
+            "tipo": "arquivos",
+            "rotulo": "Uploads e videos convertidos",
+            "caminho": "storage/uploads/video · storage/outputs/video",
+        },
     },
     "imagem": {
         "slug": "imagem",
@@ -22,6 +27,11 @@ EXTRAS: dict[str, dict] = {
         "imports": ["PIL"],
         "modulos": ["convert_image"],
         "escopo_dados": "imagem",
+        "persistencia": {
+            "tipo": "arquivos",
+            "rotulo": "Uploads e imagens convertidas",
+            "caminho": "storage/uploads/imagem · storage/outputs/imagem",
+        },
     },
     "wp-screenshot": {
         "slug": "wp-screenshot",
@@ -32,6 +42,11 @@ EXTRAS: dict[str, dict] = {
         "imports": ["PIL"],
         "modulos": ["wp_screenshot"],
         "escopo_dados": "wp-screenshot",
+        "persistencia": {
+            "tipo": "arquivos",
+            "rotulo": "Uploads e PNGs gerados",
+            "caminho": "storage/uploads/wp-screenshot · storage/outputs/wp-screenshot",
+        },
     },
     "pdf": {
         "slug": "pdf",
@@ -42,6 +57,11 @@ EXTRAS: dict[str, dict] = {
         "imports": ["pikepdf"],
         "modulos": ["unlock_pdf"],
         "escopo_dados": "unlock-pdf",
+        "persistencia": {
+            "tipo": "arquivos",
+            "rotulo": "PDFs + senhas cadastradas no SQLite",
+            "caminho": "storage/uploads/unlock-pdf · storage/outputs/unlock-pdf · storage/hub.db",
+        },
     },
     "ai": {
         "slug": "ai",
@@ -52,6 +72,11 @@ EXTRAS: dict[str, dict] = {
         "imports": ["httpx", "pypdf"],
         "modulos": ["ai_chat"],
         "escopo_dados": "ai-chat",
+        "persistencia": {
+            "tipo": "sqlite",
+            "rotulo": "Conversas e mensagens",
+            "caminho": "storage/hub.db",
+        },
     },
     "rede": {
         "slug": "rede",
@@ -62,6 +87,11 @@ EXTRAS: dict[str, dict] = {
         "imports": ["dns", "whois", "httpx"],
         "modulos": ["rede_lookup"],
         "escopo_dados": "rede-lookup",
+        "persistencia": {
+            "tipo": "config",
+            "rotulo": "So chaves de API (Shodan, AbuseIPDB, VirusTotal)",
+            "caminho": "storage/hub.db (settings)",
+        },
     },
     "crypto": {
         "slug": "crypto",
@@ -72,6 +102,11 @@ EXTRAS: dict[str, dict] = {
         "imports": [],
         "modulos": ["gcm_crypto"],
         "escopo_dados": "gcm-crypto",
+        "persistencia": {
+            "tipo": "nenhum",
+            "rotulo": "Nada gravado em disco",
+            "caminho": "—",
+        },
     },
     "cofre": {
         "slug": "cofre",
@@ -82,6 +117,41 @@ EXTRAS: dict[str, dict] = {
         "imports": [],
         "modulos": ["cofre_senhas"],
         "escopo_dados": "cofre-senhas",
+        "persistencia": {
+            "tipo": "vault",
+            "rotulo": "Cofres criptografados (.hubvault)",
+            "caminho": "storage/vaults/*.hubvault",
+        },
+    },
+    "fake": {
+        "slug": "fake",
+        "nome": "Dados fake",
+        "descricao": "Gera perfis (nome, e-mail, CPF...) editaveis e salva em .hubfake criptografado.",
+        "icone": "bi-person-vcard",
+        "packages": [],
+        "imports": [],
+        "modulos": ["fake_data"],
+        "escopo_dados": "fake-data",
+        "persistencia": {
+            "tipo": "vault",
+            "rotulo": "Colecoes de perfis (.hubfake)",
+            "caminho": "storage/fake-profiles/*.hubfake",
+        },
+    },
+    "totp": {
+        "slug": "totp",
+        "nome": "Authenticator 2FA",
+        "descricao": "Codigos TOTP locais. Backup .hubtotp criptografado pra pendrive.",
+        "icone": "bi-phone",
+        "packages": [],
+        "imports": [],
+        "modulos": ["totp_auth"],
+        "escopo_dados": "totp-auth",
+        "persistencia": {
+            "tipo": "vault",
+            "rotulo": "Vaults TOTP (.hubtotp)",
+            "caminho": "storage/totp-vaults/*.hubtotp",
+        },
     },
 }
 
@@ -157,5 +227,23 @@ TOOL_META: dict[str, dict] = {
         "aceita": "",
         "controles": "cofre",
         "extra": "cofre",
+    },
+    "fake_data": {
+        "slug": "fake-data",
+        "nome": "Dados fake",
+        "descricao": "Gera e edita perfis falsos — backup criptografado .hubfake.",
+        "icone": "bi-person-vcard",
+        "aceita": "",
+        "controles": "fake",
+        "extra": "fake",
+    },
+    "totp_auth": {
+        "slug": "totp-auth",
+        "nome": "Authenticator 2FA",
+        "descricao": "Codigos TOTP no navegador — backup .hubtotp criptografado.",
+        "icone": "bi-phone",
+        "aceita": "",
+        "controles": "totp",
+        "extra": "totp",
     },
 }
