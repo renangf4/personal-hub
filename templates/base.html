@@ -29,7 +29,14 @@
                 </li>
             </ul>
             <div class="d-flex align-items-center gap-2">
-                <span class="hub-pill d-none d-md-inline">127.0.0.1:7777</span>
+                <span class="hub-pill d-none d-md-inline" title="Modo {{ hub_mode }}">{{ hub_bind_label }}</span>
+                {% if hub_auth_required and request.state.hub_authenticated %}
+                <form method="post" action="/logout" class="m-0">
+                    <button type="submit" class="btn btn-sm btn-outline-secondary" title="Sair">
+                        <i class="bi bi-box-arrow-right"></i> <span class="d-none d-sm-inline">Sair</span>
+                    </button>
+                </form>
+                {% endif %}
                 <button id="btn-limpar-agora" class="btn btn-sm btn-limpar" title="Remove todos os arquivos e conversas">
                     <i class="bi bi-trash3"></i> <span id="btn-limpar-label">Limpar Tudo</span>
                 </button>

@@ -3,13 +3,15 @@ import shutil
 import time
 import uuid
 from pathlib import Path
+from urllib.parse import urlparse
 
 from fastapi import Body, FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from starlette.types import ASGIApp, Receive, Scope, Send
 
-from . import db, registry, store
+from . import auth, config, db, registry, store
 from .cleanup import (
     OUTPUTS_DIR,
     UPLOADS_DIR,
@@ -26,6 +28,41 @@ STATIC_DIR = BASE_DIR / "static"
 app = FastAPI(title="Personal Hub", docs_url=None, redoc_url=None)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+templates.env.globals.update({
+    "hub_mode": config.MODE,
+    "hub_bind_label": config.BIND_LABEL,
+    "hub_auth_required": config.AUTH_REQUIRED,
+    "hub_is_lan": config.IS_LAN,
+})
+
+
+class HubAuthMiddleware:
+    """ASGI puro — evita BaseHTTPMiddleware (quebra StreamingResponse)."""
+
+    def __init__(self, app: ASGIApp):
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        request = Request(scope, receive)
+        scope.setdefault("state", {})
+        scope["state"]["hub_authenticated"] = auth.autenticado(request)
+
+        path = scope.get("path") or ""
+        if auth.path_livre(path):
+            await self.app(scope, receive, send)
+            return
+        if auth.precisa_auth(request):
+            response = auth.resposta_nao_autenticado(request)
+            await response(scope, receive, send)
+            return
+        await self.app(scope, receive, send)
+
+
+app.add_middleware(HubAuthMiddleware)
 
 
 def _ai():
@@ -44,11 +81,71 @@ def _imagem():
 
 @app.on_event("startup")
 def _startup() -> None:
+    config.validate_or_raise()
     db.init_db()
     UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
     OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
     migrar_sessoes_legado()
     registry.rebuild()
+
+
+def _next_seguro(raw: str | None) -> str:
+    if not raw:
+        return "/"
+    raw = raw.strip()
+    if not raw.startswith("/") or raw.startswith("//"):
+        return "/"
+    parsed = urlparse(raw)
+    if parsed.scheme or parsed.netloc:
+        return "/"
+    return raw or "/"
+
+
+@app.get("/login", response_class=HTMLResponse)
+def login_page(request: Request, next: str = "/"):
+    if not config.AUTH_REQUIRED:
+        return RedirectResponse("/", status_code=303)
+    if auth.autenticado(request):
+        return RedirectResponse(_next_seguro(next), status_code=303)
+    return templates.TemplateResponse(
+        "login.html",
+        {
+            "request": request,
+            "next": _next_seguro(next),
+            "erro": None,
+        },
+    )
+
+
+@app.post("/login", response_class=HTMLResponse)
+async def login_submit(
+    request: Request,
+    senha: str = Form(""),
+    next: str = Form("/"),
+):
+    if not config.AUTH_REQUIRED:
+        return RedirectResponse("/", status_code=303)
+    destino = _next_seguro(next)
+    if auth.senha_ok(senha):
+        resp = RedirectResponse(destino, status_code=303)
+        auth.gravar_sessao(resp)
+        return resp
+    return templates.TemplateResponse(
+        "login.html",
+        {
+            "request": request,
+            "next": destino,
+            "erro": "Senha incorreta",
+        },
+        status_code=401,
+    )
+
+
+@app.post("/logout")
+def logout():
+    resp = RedirectResponse("/login" if config.AUTH_REQUIRED else "/", status_code=303)
+    auth.limpar_sessao(resp)
+    return resp
 
 
 def _criar_sessao(escopo: str) -> tuple[Path, Path, str]:
