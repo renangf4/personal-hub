@@ -259,6 +259,28 @@ def limpar_chats() -> int:
         return int(total)
 
 
+def limpar_senhas_pdf() -> int:
+    with get_conn() as conn:
+        total = conn.execute("SELECT COUNT(*) FROM pdf_passwords").fetchone()[0]
+        conn.execute("DELETE FROM pdf_passwords")
+        return int(total)
+
+
+def limpar_settings_api() -> int:
+    chaves = ("shodan_api_key", "abuseipdb_api_key", "virustotal_api_key")
+    with get_conn() as conn:
+        total = 0
+        for chave in chaves:
+            row = conn.execute(
+                "SELECT valor FROM hub_settings WHERE chave = ?",
+                (chave,),
+            ).fetchone()
+            if row and (row["valor"] or "").strip():
+                total += 1
+            conn.execute("DELETE FROM hub_settings WHERE chave = ?", (chave,))
+        return total
+
+
 def adicionar_mensagem(chat_id: int, role: str, conteudo: str) -> dict:
     with get_conn() as conn:
         cur = conn.execute(

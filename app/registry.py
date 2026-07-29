@@ -146,6 +146,15 @@ def modulo(nome: str) -> ModuleType | None:
 
 
 def home_itens() -> list[dict]:
+    from .cleanup import ESCOPOS_ARQUIVO, ESCOPOS_VAULT, ESCOPO_AI, info_armazenamento
+
+    def _fmt_bytes(n: int) -> str:
+        if n < 1024:
+            return f"{n} B"
+        if n < 1024 * 1024:
+            return f"{n / 1024:.1f} KB"
+        return f"{n / (1024 * 1024):.2f} MB"
+
     itens: list[dict] = []
     if "video" in CATEGORIAS:
         itens.append({**CATEGORIAS["video"], "href": "/categoria/video", "escopo": "video"})
@@ -163,6 +172,56 @@ def home_itens() -> list[dict]:
     ):
         if slug in TOOLS:
             itens.append({**TOOLS[slug], "href": f"/tool/{slug}", "escopo": slug})
+
+    for item in itens:
+        escopo = item.get("escopo") or ""
+        info = info_armazenamento(escopo)
+        bytes_total = int(info.get("bytes") or 0)
+        arquivos = int(info.get("arquivos") or 0)
+        chats = int(info.get("chats") or 0)
+        item["dados_bytes"] = bytes_total
+        item["dados_arquivos"] = arquivos
+        item["tem_dados"] = False
+
+        if escopo == ESCOPO_AI:
+            item["dados_label"] = f"{chats} conversa(s)" if chats else "0 conversas"
+            item["tem_dados"] = chats > 0
+            item["storage_title"] = "Conversas salvas no SQLite"
+            item["mostra_storage"] = True
+        elif escopo in ESCOPOS_ARQUIVO:
+            senhas = int(info.get("senhas") or 0)
+            partes: list[str] = []
+            if bytes_total > 0 or arquivos > 0:
+                partes.append(_fmt_bytes(bytes_total))
+            if escopo == "unlock-pdf" and senhas > 0:
+                partes.append(f"{senhas} senha(s)")
+            item["dados_label"] = " · ".join(partes) if partes else "0 B"
+            item["tem_dados"] = bytes_total > 0 or arquivos > 0 or (
+                escopo == "unlock-pdf" and senhas > 0
+            )
+            item["storage_title"] = (
+                "PDFs temporarios e senhas cadastradas"
+                if escopo == "unlock-pdf"
+                else "Uploads e arquivos gerados"
+            )
+            item["mostra_storage"] = True
+        elif escopo in ESCOPOS_VAULT:
+            item["dados_label"] = _fmt_bytes(bytes_total)
+            item["tem_dados"] = bytes_total > 0 or arquivos > 0
+            item["storage_title"] = "Arquivos criptografados em disco"
+            item["mostra_storage"] = True
+        elif escopo == "rede-lookup":
+            keys = int(info.get("keys") or 0)
+            item["dados_label"] = f"{keys} key(s)" if keys else "0 keys"
+            item["tem_dados"] = keys > 0
+            item["storage_title"] = "API keys (Shodan, AbuseIPDB, VirusTotal)"
+            item["mostra_storage"] = True
+        else:
+            # gcm-crypto — nada em disco
+            item["dados_label"] = ""
+            item["tem_dados"] = False
+            item["storage_title"] = ""
+            item["mostra_storage"] = False
 
     from . import db
     ordem = db.listar_ordem_home()

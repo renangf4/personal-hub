@@ -170,6 +170,22 @@ def info_armazenamento(escopo: str | None = None) -> dict:
         from . import vault_store
         return vault_store.info_bytes(ESCOPOS_VAULT[escopo])
 
+    if escopo == "unlock-pdf":
+        from . import db
+        info = _info_pastas(UPLOADS_DIR / escopo, OUTPUTS_DIR / escopo)
+        info["senhas"] = len(db.listar_senhas())
+        return info
+
+    if escopo == "rede-lookup":
+        from . import db
+        keys = (
+            "shodan_api_key",
+            "abuseipdb_api_key",
+            "virustotal_api_key",
+        )
+        salvas = sum(1 for k in keys if (db.obter_setting(k) or "").strip())
+        return {"arquivos": 0, "bytes": 0, "keys": salvas}
+
     if escopo not in ESCOPOS_ARQUIVO:
         return {"arquivos": 0, "bytes": 0}
 
@@ -180,6 +196,7 @@ def executar_limpeza(escopo: str | None = None) -> dict:
     migrar_sessoes_legado()
 
     if escopo is None:
+        # Destruir tudo: temporarios + chats + vaults + senhas PDF + API keys
         arquivos = 0
         bytes_total = 0
         for pasta in (UPLOADS_DIR, OUTPUTS_DIR):
@@ -187,12 +204,20 @@ def executar_limpeza(escopo: str | None = None) -> dict:
             arquivos += a
             bytes_total += b
         from . import db, vault_store
-        chats = db.limpar_chats()
         for kind in ESCOPOS_VAULT.values():
             vault = vault_store.limpar_todos(kind)
             arquivos += vault["arquivos"]
             bytes_total += vault["bytes"]
-        return {"arquivos": arquivos, "bytes": bytes_total, "chats": chats}
+        chats = db.limpar_chats()
+        senhas = db.limpar_senhas_pdf()
+        keys = db.limpar_settings_api()
+        return {
+            "arquivos": arquivos,
+            "bytes": bytes_total,
+            "chats": chats,
+            "senhas": senhas,
+            "keys": keys,
+        }
 
     if escopo == ESCOPO_AI:
         from . import db
@@ -200,8 +225,8 @@ def executar_limpeza(escopo: str | None = None) -> dict:
         return {"arquivos": 0, "bytes": 0, "chats": chats}
 
     if escopo in ESCOPOS_VAULT:
-        from . import vault_store
-        return vault_store.limpar_todos(ESCOPOS_VAULT[escopo])
+        # Vaults so excluem um a um na propria ferramenta
+        return {"arquivos": 0, "bytes": 0}
 
     if escopo not in ESCOPOS_ARQUIVO:
         return {"arquivos": 0, "bytes": 0}
@@ -209,3 +234,27 @@ def executar_limpeza(escopo: str | None = None) -> dict:
     a1, b1 = _limpar_pasta(UPLOADS_DIR / escopo)
     a2, b2 = _limpar_pasta(OUTPUTS_DIR / escopo)
     return {"arquivos": a1 + a2, "bytes": b1 + b2}
+
+
+def info_temporarios() -> dict:
+    migrar_sessoes_legado()
+    arquivos = 0
+    bytes_total = 0
+    for escopo in ESCOPOS_ARQUIVO:
+        info = _info_pastas(UPLOADS_DIR / escopo, OUTPUTS_DIR / escopo)
+        arquivos += info["arquivos"]
+        bytes_total += info["bytes"]
+    return {"arquivos": arquivos, "bytes": bytes_total}
+
+
+def executar_limpeza_temporarios() -> dict:
+    """So uploads/saidas de video, imagem, wp-screenshot e unlock-pdf."""
+    migrar_sessoes_legado()
+    arquivos = 0
+    bytes_total = 0
+    for escopo in ESCOPOS_ARQUIVO:
+        a1, b1 = _limpar_pasta(UPLOADS_DIR / escopo)
+        a2, b2 = _limpar_pasta(OUTPUTS_DIR / escopo)
+        arquivos += a1 + a2
+        bytes_total += b1 + b2
+    return {"arquivos": arquivos, "bytes": bytes_total}

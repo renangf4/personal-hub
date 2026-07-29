@@ -358,20 +358,16 @@
             row.className = 'totp-card';
             row.dataset.id = a.id;
             row.innerHTML =
-                '<div>' +
                 '<div class="totp-card__issuer">' + escapeHtml(a.issuer || 'Conta') + '</div>' +
                 '<div class="totp-card__label">' + escapeHtml(a.label || '') + '</div>' +
-                '</div>' +
-                '<div class="totp-card__right">' +
                 '<div class="totp-card__code" data-act="copy" title="Copiar">' + escapeHtml(formatCode(info.code)) + '</div>' +
                 '<div class="totp-card__timer"><div class="totp-card__timer-bar' + (urgent ? ' is-urgent' : '') + '" style="width:' + pct + '%"></div></div>' +
-                '</div>' +
                 '<div class="totp-card__acoes">' +
                 '<button type="button" class="btn btn-sm btn-outline-primary" data-act="copy"><i class="bi bi-clipboard"></i> Copiar</button>' +
                 '<button type="button" class="btn btn-sm btn-outline-secondary" data-act="edit"><i class="bi bi-pencil"></i></button>' +
                 '</div>';
-            row.querySelectorAll('[data-act="copy"]').forEach((btn) => {
-                btn.addEventListener('click', () => copiar(info.code || '', btn));
+            row.querySelectorAll('[data-act="copy"]').forEach((node) => {
+                node.addEventListener('click', () => copiar(info.code || '', row));
             });
             row.querySelector('[data-act="edit"]').addEventListener('click', () => abrirConta(a));
             el.accounts.appendChild(row);
@@ -419,13 +415,17 @@
         }, 1000);
     }
 
-    async function copiar(texto, btn) {
+    async function copiar(texto, row) {
         bumpIdle();
         try {
             await navigator.clipboard.writeText(String(texto || '').replace(/\s+/g, ''));
-            const prev = btn.innerHTML;
-            btn.innerHTML = '<i class="bi bi-check2"></i>';
-            setTimeout(() => { btn.innerHTML = prev; }, 1200);
+            const codeEl = row && row.querySelector('.totp-card__code');
+            if (!codeEl) return;
+            codeEl.classList.add('is-copied');
+            clearTimeout(codeEl._copyTimer);
+            codeEl._copyTimer = setTimeout(() => {
+                codeEl.classList.remove('is-copied');
+            }, 1200);
         } catch (_) {}
     }
 
@@ -561,6 +561,34 @@
         renderAccounts();
     }
 
+    async function renomearVault() {
+        if (!state.vaultId || !state.masterPassword) return;
+        bumpIdle();
+        const novo = prompt('Novo nome do vault', state.nome || '');
+        if (novo === null) return;
+        const nome = novo.trim();
+        if (!nome) {
+            alert('Informe um nome');
+            return;
+        }
+        if (nome.length > 80) {
+            alert('Nome muito longo');
+            return;
+        }
+        try {
+            const blob = await HubGcm.encrypt(JSON.stringify(state.data), state.masterPassword);
+            const updated = await api(API + '/' + state.vaultId, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ blob, nome }),
+            });
+            state.nome = updated.nome || nome;
+            el.titulo.textContent = state.nome;
+        } catch (e) {
+            alert(e.message || 'Erro ao renomear');
+        }
+    }
+
     async function excluirVault() {
         if (!state.vaultId) return;
         if (!confirm('Excluir este vault permanentemente?')) return;
@@ -637,6 +665,7 @@
     document.getElementById('totp-conta-salvar')?.addEventListener('click', salvarConta);
     document.getElementById('totp-conta-excluir')?.addEventListener('click', excluirConta);
     document.getElementById('totp-btn-excluir-vault')?.addEventListener('click', excluirVault);
+    document.getElementById('totp-btn-renomear')?.addEventListener('click', renomearVault);
     document.getElementById('totp-btn-export')?.addEventListener('click', () => {
         if (state.vaultId) window.location.href = API + '/' + state.vaultId + '/exportar';
     });

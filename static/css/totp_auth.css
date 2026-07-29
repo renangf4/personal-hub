@@ -1,50 +1,62 @@
+.totp-accounts {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 0.85rem;
+}
+
 .totp-card {
     background: var(--hub-surface);
     border: 1px solid var(--hub-border);
     border-radius: var(--hub-radius-sm);
-    padding: 1rem 1.1rem;
-    margin-bottom: 0.75rem;
-    display: grid;
-    grid-template-columns: 1fr auto;
-    gap: 0.75rem 1rem;
-    align-items: center;
+    padding: 1rem 1.05rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.55rem;
+    min-width: 0;
 }
 
 .totp-card__issuer {
     font-weight: 600;
-    margin-bottom: 0.1rem;
+    font-size: 0.95rem;
+    line-height: 1.25;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .totp-card__label {
     color: var(--hub-muted);
-    font-size: 0.8125rem;
-    word-break: break-all;
+    font-size: 0.75rem;
+    line-height: 1.3;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    margin-top: -0.25rem;
 }
 
 .totp-card__code {
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    font-size: 1.65rem;
+    font-size: 1.45rem;
     font-weight: 700;
-    letter-spacing: 0.12em;
-    line-height: 1.1;
+    letter-spacing: 0.1em;
+    line-height: 1.15;
     cursor: pointer;
     user-select: all;
+    margin-top: 0.15rem;
 }
 
 .totp-card__code:hover {
     color: var(--hub-blue);
 }
 
-.totp-card__right {
-    text-align: right;
-    min-width: 7.5rem;
+.totp-card__code.is-copied {
+    color: #3dd68c;
 }
 
 .totp-card__timer {
-    height: 4px;
+    height: 3px;
     border-radius: 2px;
     background: rgba(255, 255, 255, 0.08);
-    margin-top: 0.45rem;
     overflow: hidden;
 }
 
@@ -59,8 +71,12 @@
 }
 
 .totp-card__acoes {
-    grid-column: 1 / -1;
     display: flex;
     flex-wrap: wrap;
     gap: 0.35rem;
+    margin-top: 0.15rem;
+}
+
+.totp-card__acoes .btn {
+    flex: 1 1 auto;
 }

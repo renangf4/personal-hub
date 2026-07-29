@@ -25,9 +25,6 @@
             <p class="hub-subtitle mb-0">{{ tool.descricao }}</p>
         </div>
     </div>
-    <button type="button" class="btn btn-sm btn-limpar btn-limpar-escopo" data-escopo="{{ tool.slug }}" title="Apagar vaults">
-        <i class="bi bi-trash3"></i> <span class="btn-limpar-escopo-label">Limpar</span>
-    </button>
 </div>
 
 <div class="alert alert-secondary small mb-4">
@@ -62,6 +59,9 @@
                 </div>
             </div>
             <div class="d-flex flex-wrap gap-2">
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="totp-btn-renomear" title="Renomear vault">
+                    <i class="bi bi-pencil"></i> Renomear
+                </button>
                 <button type="button" class="btn btn-sm btn-outline-secondary" id="totp-btn-export">
                     <i class="bi bi-download"></i> Exportar
                 </button>

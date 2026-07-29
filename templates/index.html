@@ -34,6 +34,11 @@
                     <h2 class="h5 mb-2 fw-semibold">{{ tool.nome }}</h2>
                     <p class="card-text text-secondary small mb-0 lh-sm">{{ tool.descricao }}</p>
                 </div>
+                {% if tool.mostra_storage %}
+                <span class="tool-card__storage{% if tool.tem_dados %} tool-card__storage--used{% endif %}" title="{{ tool.storage_title }}">
+                    <i class="bi bi-hdd"></i> {{ tool.dados_label }}
+                </span>
+                {% endif %}
             </div>
         </a>
     </div>

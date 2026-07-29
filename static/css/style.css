@@ -217,19 +217,30 @@ body {
 }
 
 .btn-outline-danger,
-.btn-limpar,
-#btn-limpar-agora {
+.btn-limpar {
     color: var(--hub-red) !important;
     border-color: rgba(255, 69, 58, 0.45) !important;
     background: transparent !important;
 }
 
 .btn-outline-danger:hover,
-.btn-limpar:hover,
-#btn-limpar-agora:hover {
+.btn-limpar:hover {
     background: var(--hub-red-soft) !important;
     border-color: var(--hub-red) !important;
     color: #ff6961 !important;
+}
+
+.btn-destruir {
+    color: #fff !important;
+    border-color: var(--hub-red) !important;
+    background: var(--hub-red) !important;
+    font-size: 0.8125rem;
+}
+
+.btn-destruir:hover {
+    color: #fff !important;
+    border-color: #ff6961 !important;
+    background: #ff6961 !important;
 }
 
 .btn-outline-warning {
@@ -298,6 +309,7 @@ body {
 
 .tool-card--home {
     min-height: 13.5rem;
+    position: relative;
 }
 
 .tool-card__body {
@@ -308,6 +320,29 @@ body {
     text-align: center;
     padding: 2rem 1.5rem !important;
     min-height: 13.5rem;
+}
+
+.tool-card__storage {
+    position: absolute;
+    right: 0.75rem;
+    bottom: 0.75rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.18rem 0.5rem;
+    border-radius: 999px;
+    font-size: 0.7rem;
+    font-weight: 500;
+    line-height: 1;
+    color: var(--hub-muted);
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid var(--hub-border);
+}
+
+.tool-card__storage--used {
+    color: #e8c36a;
+    border-color: rgba(232, 195, 106, 0.4);
+    background: rgba(232, 195, 106, 0.12);
 }
 
 .tool-card__icon--home {

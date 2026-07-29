@@ -17,7 +17,9 @@ from .cleanup import (
     UPLOADS_DIR,
     escopo_de_slug,
     executar_limpeza,
+    executar_limpeza_temporarios,
     info_armazenamento,
+    info_temporarios,
     migrar_sessoes_legado,
 )
 
@@ -466,6 +468,8 @@ def api_limpar_info():
 
 @app.get("/api/limpar-info/{escopo}")
 def api_limpar_info_escopo(escopo: str):
+    if escopo == "temporarios":
+        return {"ok": True, "escopo": escopo, **info_temporarios()}
     return {"ok": True, "escopo": escopo, **info_armazenamento(escopo)}
 
 
@@ -477,6 +481,9 @@ def api_limpar_agora():
 
 @app.post("/api/limpar-agora/{escopo}")
 def api_limpar_agora_escopo(escopo: str):
+    if escopo == "temporarios":
+        resultado = executar_limpeza_temporarios()
+        return {"ok": True, "escopo": escopo, **resultado}
     resultado = executar_limpeza(escopo)
     return {"ok": True, "escopo": escopo, **resultado}
 

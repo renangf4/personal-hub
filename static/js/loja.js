@@ -197,9 +197,9 @@
             : `<button type="button" class="btn btn-primary btn-loja-instalar" data-slug="${extra.slug}">
                    <i class="bi bi-download"></i> Instalar
                </button>`;
-        const mostraDados = persist.tipo !== 'nenhum' && persist.tipo !== 'config';
+        const mostraDados = persist.tipo === 'arquivos' || persist.tipo === 'sqlite';
         const dados = mostraDados
-            ? `<button type="button" class="btn btn-sm btn-limpar btn-loja-dados" data-escopo="${extra.escopo_dados}" title="Apaga dados desta ferramenta">
+            ? `<button type="button" class="btn btn-sm btn-limpar btn-loja-dados" data-escopo="${extra.escopo_dados}" title="Apaga dados temporarios desta ferramenta">
                 <i class="bi bi-trash3"></i> <span class="btn-loja-dados-label">${escapeHtml(labelDados(extra))}</span>
             </button>`
             : '';

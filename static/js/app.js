@@ -87,13 +87,12 @@
     async function atualizarLabelLimpar(btn, escopo) {
         const label = btn.querySelector('.btn-limpar-escopo-label, #btn-limpar-label');
         if (!label) return;
-        const padrao = escopo ? 'Limpar' : 'Limpar Tudo';
+        const isTemp = btn.classList.contains('btn-limpar-escopo') && escopo && escopo !== 'ai-chat';
+        const padrao = isTemp ? 'Limpar dados temporarios' : (escopo ? 'Limpar' : 'Limpar');
         try {
             const resp = await fetch(infoUrl(escopo));
             const info = await resp.json();
-            if (!escopo) {
-                label.textContent = info.bytes > 0 ? `${padrao} (${formatBytes(info.bytes)})` : padrao;
-            } else if (escopo === 'ai-chat') {
+            if (escopo === 'ai-chat') {
                 label.textContent = info.chats > 0 ? `Limpar (${info.chats})` : padrao;
             } else if (info.arquivos > 0) {
                 label.textContent = `${padrao} (${formatBytes(info.bytes)})`;
@@ -105,18 +104,36 @@
         }
     }
 
+    async function atualizarLabelTemporarios() {
+        const btn = document.getElementById('btn-limpar-temporarios');
+        if (!btn) return;
+        const label = btn.querySelector('.btn-limpar-temp-label');
+        const padrao = 'Limpar arquivos temporarios';
+        try {
+            const resp = await fetch('/api/limpar-info/temporarios');
+            const info = await resp.json();
+            if (label) {
+                label.textContent = info.arquivos > 0
+                    ? `${padrao} (${formatBytes(info.bytes)})`
+                    : padrao;
+            }
+        } catch (_) {
+            if (label) label.textContent = padrao;
+        }
+    }
+
     async function atualizarTodosLabelsLimpar() {
-        const globalBtn = document.getElementById('btn-limpar-agora');
-        if (globalBtn) await atualizarLabelLimpar(globalBtn, null);
         for (const btn of document.querySelectorAll('.btn-limpar-escopo')) {
             await atualizarLabelLimpar(btn, btn.dataset.escopo);
         }
+        await atualizarLabelTemporarios();
     }
 
     window.atualizarLabelLixo = atualizarTodosLabelsLimpar;
     atualizarTodosLabelsLimpar();
 
     async function executarLimpeza(btn, escopo) {
+        if (!escopo) return;
         btn.disabled = true;
         try {
             const infoResp = await fetch(infoUrl(escopo));
@@ -128,23 +145,12 @@
                     return;
                 }
                 if (!confirm(`Apagar ${info.chats} conversa(s)?`)) return;
-            } else if (escopo) {
-                if (!info.arquivos) {
-                    alert('Nada para limpar nesta ferramenta.');
-                    return;
-                }
-                if (!confirm(`Remover ${info.arquivos} arquivo(s) (${formatBytes(info.bytes)}) desta ferramenta?`)) return;
             } else {
-                const temArquivos = info.arquivos > 0;
-                const temChats = (info.chats || 0) > 0;
-                if (!temArquivos && !temChats) {
-                    alert('Nada para limpar.');
+                if (!info.arquivos) {
+                    alert('Nenhum dado temporario para limpar.');
                     return;
                 }
-                const partes = [];
-                if (temArquivos) partes.push(`${info.arquivos} arquivo(s) (${formatBytes(info.bytes)})`);
-                if (temChats) partes.push(`${info.chats} conversa(s)`);
-                if (!confirm(`Remover ${partes.join(' e ')}?`)) return;
+                if (!confirm(`Remover ${info.arquivos} arquivo(s) temporarios (${formatBytes(info.bytes)})?`)) return;
             }
 
             const resp = await fetch(limparUrl(escopo), { method: 'POST' });
@@ -155,13 +161,6 @@
                     window.aiRecarregarAposLimpar();
                 } else {
                     location.reload();
-                }
-            } else if (!escopo) {
-                const partes = [`${data.arquivos} arquivo(s) (${formatBytes(data.bytes)})`];
-                if (data.chats) partes.push(`${data.chats} conversa(s)`);
-                alert(`${partes.join(' e ')} removidos.`);
-                if (typeof window.aiRecarregarAposLimpar === 'function') {
-                    window.aiRecarregarAposLimpar();
                 }
             } else {
                 alert(`${data.arquivos} arquivo(s) removido(s) (${formatBytes(data.bytes)} liberados).`);
@@ -174,12 +173,83 @@
         }
     }
 
-    const btnLimpar = document.getElementById('btn-limpar-agora');
-    if (btnLimpar) {
-        btnLimpar.addEventListener('click', () => executarLimpeza(btnLimpar, null));
+    document.querySelectorAll('.btn-limpar-escopo').forEach((btn) => {
+        btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            executarLimpeza(btn, btn.dataset.escopo);
+        });
+    });
+
+    async function destruirTudo(btn) {
+        const msg1 =
+            'DESTRUIR TUDO?\n\n' +
+            'Isso apaga de forma permanente:\n' +
+            '- Uploads e arquivos gerados\n' +
+            '- Conversas da IA\n' +
+            '- Cofres (.hubvault)\n' +
+            '- Dados fake (.hubfake)\n' +
+            '- Authenticator 2FA (.hubtotp)\n' +
+            '- Senhas salvas do PDF\n' +
+            '- API keys (Shodan, AbuseIPDB, VirusTotal)\n\n' +
+            'Nao da pra desfazer.';
+        if (!confirm(msg1)) return;
+        if (!confirm('Confirma mesmo? Ultima chance antes de apagar tudo.')) return;
+
+        btn.disabled = true;
+        try {
+            const resp = await fetch('/api/limpar-agora', { method: 'POST' });
+            const data = await resp.json();
+            const partes = [
+                `${data.arquivos || 0} arquivo(s) (${formatBytes(data.bytes || 0)})`,
+                `${data.chats || 0} conversa(s)`,
+                `${data.senhas || 0} senha(s) PDF`,
+                `${data.keys || 0} API key(s)`,
+            ];
+            alert('Destruido:\n' + partes.join('\n'));
+            location.href = '/';
+        } catch (err) {
+            alert('Erro ao destruir: ' + err.message);
+        } finally {
+            btn.disabled = false;
+        }
     }
 
-    document.querySelectorAll('.btn-limpar-escopo').forEach((btn) => {
-        btn.addEventListener('click', () => executarLimpeza(btn, btn.dataset.escopo));
-    });
+    async function limparTemporarios(btn) {
+        btn.disabled = true;
+        try {
+            const infoResp = await fetch('/api/limpar-info/temporarios');
+            const info = await infoResp.json();
+            if (!info.arquivos) {
+                alert('Nenhum arquivo temporario para limpar.');
+                return;
+            }
+            if (!confirm(
+                `Limpar arquivos temporarios?\n\n` +
+                `Remove uploads/saidas de video, imagem, screenshot WP e PDF.\n` +
+                `${info.arquivos} arquivo(s) (${formatBytes(info.bytes)}).\n\n` +
+                `Nao apaga cofres, 2FA, chats nem senhas salvas.`
+            )) return;
+
+            const resp = await fetch('/api/limpar-agora/temporarios', { method: 'POST' });
+            const data = await resp.json();
+            alert(`${data.arquivos} arquivo(s) removido(s) (${formatBytes(data.bytes)} liberados).`);
+            if (location.pathname === '/') location.reload();
+            else atualizarTodosLabelsLimpar();
+        } catch (err) {
+            alert('Erro ao limpar: ' + err.message);
+        } finally {
+            btn.disabled = false;
+        }
+    }
+
+    const btnDestruir = document.getElementById('btn-destruir-tudo');
+    if (btnDestruir) {
+        btnDestruir.addEventListener('click', () => destruirTudo(btnDestruir));
+    }
+
+    const btnTemp = document.getElementById('btn-limpar-temporarios');
+    if (btnTemp) {
+        btnTemp.addEventListener('click', () => limparTemporarios(btnTemp));
+    }
 })();

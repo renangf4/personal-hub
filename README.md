@@ -76,7 +76,8 @@ Modo LAN:
 - **Modo local** (padrao): so `127.0.0.1`, sem login.
 - **Modo LAN**: bind `0.0.0.0` + senha compartilhada (`HUB_PASSWORD` / argumento).
 - **Loja** instala e remove pacotes opcionais sem sujar a raiz do projeto; mostra deps, dados persistentes e o caminho em `storage/`.
-- **Limpeza por ferramenta** e botao global de limpar em `storage/`.
+- **Limpeza**: temporarios (video/imagem/PDF) separado de **Destruir tudo** (inclui vaults, chats, senhas e keys).
+- Home mostra uso de armazenamento por ferramenta (KB/MB, conversas, keys).
 - **SQLite local** em `storage/hub.db` (senhas PDF, chats IA, settings como key Shodan).
 - **Vaults criptografados** (`.hubvault`, `.hubfake`, `.hubtotp`) — ciphertext em disco; senha-mestra so no navegador.
 - **FFmpeg embutido** via `imageio-ffmpeg` (extra Video).
