@@ -163,7 +163,7 @@
 
 {% block scripts %}
 <link href="https://cdn.jsdelivr.net/npm/highlight.js@11.10.0/styles/github-dark.min.css" rel="stylesheet">
-<link href="/static/css/ai_chat.css" rel="stylesheet">
+<link href="{{ static_url('css/ai_chat.css') }}" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/marked@14.1.3/marked.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.10.0/lib/core.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.10.0/lib/languages/javascript.min.js"></script>
@@ -177,5 +177,5 @@
 <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.10.0/lib/languages/sql.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.10.0/lib/languages/yaml.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.10.0/lib/languages/dockerfile.min.js"></script>
-<script src="/static/js/ai_chat.js"></script>
+<script src="{{ static_url('js/ai_chat.js') }}"></script>
 {% endblock %}

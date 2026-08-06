@@ -37,17 +37,76 @@
         });
     }
 
+    function modoPreviewCards() {
+        const controles = (wrap && (wrap.getAttribute('data-controles') || wrap.dataset.controles)) || '';
+        if (controles === 'video') return 'video';
+        if (controles === 'imagem' || controles === 'wp-screenshot') return 'imagem';
+
+        const escopo = (
+            document.getElementById('btn-storage')
+            || document.querySelector('.btn-limpar-escopo')
+        );
+        const esc = (escopo && escopo.getAttribute('data-escopo')) || '';
+        if (esc === 'video') return 'video';
+        if (esc === 'imagem' || esc === 'wp-screenshot') return 'imagem';
+
+        const path = location.pathname || '';
+        if (path.includes('/categoria/video') || /\/tool\/convert-(mp4|webm|gif|mkv|mov)\b/.test(path)) {
+            return 'video';
+        }
+        if (
+            path.includes('/categoria/imagem')
+            || path.includes('wp-screenshot')
+            || /\/tool\/convert-/.test(path)
+        ) {
+            return 'imagem';
+        }
+        return null;
+    }
+
+    function mediaUrl(url) {
+        if (!url) return '';
+        try {
+            const u = new URL(url, location.origin);
+            const parts = u.pathname.split('/').map((p, i, arr) => (
+                i === arr.length - 1 && p ? encodeURIComponent(decodeURIComponent(p)) : p
+            ));
+            u.pathname = parts.join('/');
+            return u.pathname + u.search;
+        } catch (_) {
+            return url;
+        }
+    }
+
     function renderResultados(resultados) {
         wrap.classList.remove('d-none');
         if (!resultados || !resultados.length) {
+            lista.className = 'list-group';
             lista.innerHTML = '<div class="list-group-item text-secondary">Sem resultados.</div>';
             return;
         }
 
+        const modo = modoPreviewCards();
+        if (modo === 'imagem' || modo === 'video') {
+            lista.className = 'resultados-preview' + (modo === 'video' ? ' resultados-preview--video' : '');
+            try {
+                lista.innerHTML = resultados.map((r) =>
+                    modo === 'video' ? renderResultadoVideo(r) : renderResultadoImagem(r)
+                ).join('');
+                hidratarPreviews(lista);
+            } catch (err) {
+                console.error('Falha ao renderizar cards:', err);
+                lista.className = 'list-group';
+                lista.innerHTML = `<div class="list-group-item list-group-item-danger">Erro ao montar preview: ${escapeHtml(err.message || err)}</div>`;
+            }
+            return;
+        }
+
+        lista.className = 'list-group';
         lista.innerHTML = resultados.map((r) => {
             const cls = r.ok ? 'list-group-item-success' : 'list-group-item-danger';
             const acao = r.ok && r.download_url
-                ? `<a href="${r.download_url}" class="btn btn-sm btn-primary" download>
+                ? `<a href="${escapeHtml(mediaUrl(r.download_url))}" class="btn btn-sm btn-primary" download>
                        <i class="bi bi-download"></i> Baixar
                    </a>`
                 : '';
@@ -61,6 +120,112 @@
                 </div>
             `;
         }).join('');
+    }
+
+    function renderResultadoImagem(r) {
+        if (!r.ok || !r.download_url || !r.saida) {
+            return renderResultadoCardErro(r);
+        }
+        const nome = r.saida;
+        const url = mediaUrl(r.download_url);
+        const peso = r.bytes != null ? formatBytes(r.bytes) : '';
+        return `
+            <a href="${escapeHtml(url)}" class="resultado-card" download="${escapeHtml(nome)}" title="Baixar ${escapeHtml(nome)}${peso ? ` (${peso})` : ''}">
+                <div class="resultado-card__preview">
+                    <img data-preview-src="${escapeHtml(url)}" alt="${escapeHtml(nome)}" loading="lazy">
+                </div>
+                <div class="resultado-card__meta">
+                    <div class="resultado-card__info">
+                        <span class="resultado-card__nome">${escapeHtml(nome)}</span>
+                        ${peso ? `<span class="resultado-card__peso">${escapeHtml(peso)}</span>` : ''}
+                    </div>
+                    <span class="resultado-card__acao"><i class="bi bi-download"></i></span>
+                </div>
+            </a>
+        `;
+    }
+
+    function renderResultadoVideo(r) {
+        if (!r.ok || !r.download_url || !r.saida) {
+            return renderResultadoCardErro(r);
+        }
+        const nome = r.saida;
+        const url = mediaUrl(r.download_url);
+        const peso = r.bytes != null ? formatBytes(r.bytes) : '';
+        const ext = (nome.split('.').pop() || '').toLowerCase();
+        let preview;
+        if (ext === 'gif') {
+            preview = `<img data-preview-src="${escapeHtml(url)}" alt="${escapeHtml(nome)}" loading="lazy">`;
+        } else if (ext === 'mp4' || ext === 'webm' || ext === 'mov') {
+            preview = `<video data-preview-src="${escapeHtml(url)}" muted playsinline loop preload="metadata"></video>`;
+        } else {
+            preview = `<div class="resultado-card__placeholder"><i class="bi bi-film"></i></div>`;
+        }
+        return `
+            <a href="${escapeHtml(url)}" class="resultado-card resultado-card--video" download="${escapeHtml(nome)}" title="Baixar ${escapeHtml(nome)}${peso ? ` (${peso})` : ''}">
+                <div class="resultado-card__preview resultado-card__preview--video">
+                    ${preview}
+                </div>
+                <div class="resultado-card__meta">
+                    <div class="resultado-card__info">
+                        <span class="resultado-card__nome">${escapeHtml(nome)}</span>
+                        ${peso ? `<span class="resultado-card__peso">${escapeHtml(peso)}</span>` : ''}
+                    </div>
+                    <span class="resultado-card__acao"><i class="bi bi-download"></i></span>
+                </div>
+            </a>
+        `;
+    }
+
+    function renderResultadoCardErro(r) {
+        return `
+            <div class="resultado-card resultado-card--erro">
+                <div class="resultado-card__preview resultado-card__preview--erro">
+                    <i class="bi bi-exclamation-triangle"></i>
+                </div>
+                <div class="resultado-card__meta">
+                    <span class="resultado-card__nome">${escapeHtml(r.entrada || 'Erro')}</span>
+                    <span class="resultado-card__hint">${escapeHtml(r.msg || 'Falha')}</span>
+                </div>
+            </div>
+        `;
+    }
+
+    function hidratarPreviews(container) {
+        container.querySelectorAll('img[data-preview-src]').forEach(async (img) => {
+            const src = img.getAttribute('data-preview-src');
+            if (!src) return;
+            try {
+                const resp = await fetch(src);
+                if (!resp.ok) throw new Error('preview');
+                const blob = await resp.blob();
+                const objectUrl = URL.createObjectURL(blob);
+                img.onload = () => URL.revokeObjectURL(objectUrl);
+                img.src = objectUrl;
+            } catch (_) {
+                img.alt = 'Preview indisponivel';
+            }
+        });
+
+        container.querySelectorAll('video[data-preview-src]').forEach(async (video) => {
+            const src = video.getAttribute('data-preview-src');
+            if (!src) return;
+            try {
+                const resp = await fetch(src);
+                if (!resp.ok) throw new Error('preview');
+                const blob = await resp.blob();
+                const objectUrl = URL.createObjectURL(blob);
+                video.src = objectUrl;
+                video.addEventListener('loadeddata', () => {
+                    video.play().catch(() => {});
+                }, { once: true });
+            } catch (_) {
+                video.replaceWith(Object.assign(document.createElement('div'), {
+                    className: 'resultado-card__placeholder',
+                    innerHTML: '<i class="bi bi-film"></i>',
+                }));
+            }
+        });
     }
 
     function escapeHtml(s) {
@@ -132,6 +297,42 @@
     window.atualizarLabelLixo = atualizarTodosLabelsLimpar;
     atualizarTodosLabelsLimpar();
 
+    function limparPainelResultados() {
+        if (!wrap || !lista) return;
+        lista.querySelectorAll('video').forEach((v) => {
+            try {
+                v.pause();
+                v.removeAttribute('src');
+                v.load();
+            } catch (_) { /* ignore */ }
+        });
+        lista.innerHTML = '';
+        lista.className = 'list-group';
+        wrap.classList.add('d-none');
+    }
+
+    function removerResultadoPorNome(nome) {
+        if (!lista || !nome) return;
+        lista.querySelectorAll('a.resultado-card').forEach((card) => {
+            const dl = card.getAttribute('download') || '';
+            const href = card.getAttribute('href') || '';
+            if (dl === nome || decodeURIComponent(href).endsWith('/' + nome) || href.endsWith('/' + encodeURIComponent(nome))) {
+                const media = card.querySelector('video');
+                if (media) {
+                    try {
+                        media.pause();
+                        media.removeAttribute('src');
+                        media.load();
+                    } catch (_) { /* ignore */ }
+                }
+                card.remove();
+            }
+        });
+        if (!lista.querySelector('.resultado-card')) {
+            limparPainelResultados();
+        }
+    }
+
     async function executarLimpeza(btn, escopo) {
         if (!escopo) return;
         btn.disabled = true;
@@ -163,6 +364,7 @@
                     location.reload();
                 }
             } else {
+                limparPainelResultados();
                 alert(`${data.arquivos} arquivo(s) removido(s) (${formatBytes(data.bytes)} liberados).`);
             }
         } catch (err) {
@@ -251,5 +453,137 @@
     const btnTemp = document.getElementById('btn-limpar-temporarios');
     if (btnTemp) {
         btnTemp.addEventListener('click', () => limparTemporarios(btnTemp));
+    }
+
+    /* ——— Storage browser (imagem / video) ——— */
+    const btnStorage = document.getElementById('btn-storage');
+    const modalStorageEl = document.getElementById('modal-storage');
+    if (btnStorage && modalStorageEl) {
+        const storageEscopo = btnStorage.dataset.escopo;
+        const storageGrid = document.getElementById('storage-grid');
+        const storageVazio = document.getElementById('storage-vazio');
+        const storageResumo = document.getElementById('storage-resumo');
+        const btnApagarTudo = document.getElementById('btn-storage-apagar-tudo');
+        const modalStorage = bootstrap.Modal.getOrCreateInstance(modalStorageEl);
+
+        const IMG_EXT = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp', '.tif', '.tiff']);
+        const VID_EXT = new Set(['.mp4', '.webm', '.mov']);
+
+        function storageUrl(item, download) {
+            const base = `/api/storage/${encodeURIComponent(storageEscopo)}/${encodeURIComponent(item.kind)}/${encodeURIComponent(item.sessao_id)}/${encodeURIComponent(item.nome)}`;
+            return download ? `${base}?inline=0` : `${base}?inline=1`;
+        }
+
+        function renderStorageCard(item) {
+            const peso = formatBytes(item.bytes);
+            const tipo = item.kind === 'upload' ? 'Upload' : 'Saida';
+            const ext = (item.ext || '').toLowerCase();
+            let media = `<div class="resultado-card__placeholder"><i class="bi bi-file-earmark"></i></div>`;
+            if (IMG_EXT.has(ext)) {
+                media = `<img data-preview-src="${escapeHtml(storageUrl(item))}" alt="${escapeHtml(item.nome)}" loading="lazy">`;
+            } else if (VID_EXT.has(ext)) {
+                media = `<video data-preview-src="${escapeHtml(storageUrl(item))}" muted playsinline loop preload="metadata"></video>`;
+            } else if (ext === '.mkv' || ext === '.avi' || ext === '.m4v') {
+                media = `<div class="resultado-card__placeholder"><i class="bi bi-film"></i></div>`;
+            }
+
+            return `
+                <div class="resultado-card storage-card" data-kind="${escapeHtml(item.kind)}" data-sessao="${escapeHtml(item.sessao_id)}" data-nome="${escapeHtml(item.nome)}">
+                    <a href="${escapeHtml(storageUrl(item, true))}" class="storage-card__preview resultado-card__preview${VID_EXT.has(ext) || ext === '.mkv' ? ' resultado-card__preview--video' : ''}" download="${escapeHtml(item.nome)}" title="Baixar ${escapeHtml(item.nome)}">
+                        ${media}
+                    </a>
+                    <div class="resultado-card__meta">
+                        <div class="resultado-card__info">
+                            <span class="resultado-card__nome" title="${escapeHtml(item.nome)}">${escapeHtml(item.nome)}</span>
+                            <span class="resultado-card__peso">${escapeHtml(peso)} · ${tipo}</span>
+                        </div>
+                        <button type="button" class="btn btn-sm btn-limpar storage-card__del" title="Apagar arquivo">
+                            <i class="bi bi-trash3"></i>
+                        </button>
+                    </div>
+                </div>
+            `;
+        }
+
+        async function carregarStorage() {
+            storageResumo.textContent = 'Carregando...';
+            storageGrid.innerHTML = '';
+            storageVazio.classList.add('d-none');
+            try {
+                const resp = await fetch(`/api/storage/${encodeURIComponent(storageEscopo)}`);
+                const data = await resp.json();
+                if (!resp.ok || !data.ok) throw new Error(data.detail || 'Falha ao listar');
+                const itens = data.itens || [];
+                storageResumo.textContent = itens.length
+                    ? `${itens.length} arquivo(s) · ${formatBytes(data.bytes || 0)}`
+                    : 'Vazio';
+                if (!itens.length) {
+                    storageVazio.classList.remove('d-none');
+                    return;
+                }
+                storageGrid.innerHTML = itens.map(renderStorageCard).join('');
+                hidratarPreviews(storageGrid);
+            } catch (err) {
+                storageResumo.textContent = 'Erro ao carregar';
+                storageVazio.textContent = err.message || 'Erro';
+                storageVazio.classList.remove('d-none');
+            }
+        }
+
+        btnStorage.addEventListener('click', () => {
+            modalStorage.show();
+            carregarStorage();
+        });
+
+        storageGrid.addEventListener('click', async (e) => {
+            const btn = e.target.closest('.storage-card__del');
+            if (!btn) return;
+            e.preventDefault();
+            e.stopPropagation();
+            const card = btn.closest('.storage-card');
+            if (!card) return;
+            const { kind, sessao, nome } = card.dataset;
+            if (!confirm(`Apagar "${nome}"?`)) return;
+            btn.disabled = true;
+            try {
+                const resp = await fetch(
+                    `/api/storage/${encodeURIComponent(storageEscopo)}/${encodeURIComponent(kind)}/${encodeURIComponent(sessao)}/${encodeURIComponent(nome)}`,
+                    { method: 'DELETE' }
+                );
+                const data = await resp.json().catch(() => ({}));
+                if (!resp.ok) throw new Error(data.detail || 'Falha ao apagar');
+                if (kind === 'output') removerResultadoPorNome(nome);
+                await carregarStorage();
+                if (typeof window.atualizarLabelLixo === 'function') window.atualizarLabelLixo();
+            } catch (err) {
+                alert('Erro ao apagar: ' + err.message);
+                btn.disabled = false;
+            }
+        });
+
+        if (btnApagarTudo) {
+            btnApagarTudo.addEventListener('click', async () => {
+                try {
+                    const infoResp = await fetch(infoUrl(storageEscopo));
+                    const info = await infoResp.json();
+                    if (!info.arquivos) {
+                        alert('Nenhum arquivo para apagar.');
+                        return;
+                    }
+                    if (!confirm(`Apagar todos os ${info.arquivos} arquivo(s) (${formatBytes(info.bytes)})?`)) return;
+                    btnApagarTudo.disabled = true;
+                    const resp = await fetch(limparUrl(storageEscopo), { method: 'POST' });
+                    const data = await resp.json();
+                    if (!resp.ok) throw new Error(data.detail || 'Falha');
+                    limparPainelResultados();
+                    await carregarStorage();
+                    if (typeof window.atualizarLabelLixo === 'function') window.atualizarLabelLixo();
+                } catch (err) {
+                    alert('Erro ao apagar tudo: ' + err.message);
+                } finally {
+                    btnApagarTudo.disabled = false;
+                }
+            });
+        }
     }
 })();

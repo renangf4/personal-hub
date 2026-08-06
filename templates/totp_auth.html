@@ -3,8 +3,8 @@
 {% block title %}{{ tool.nome }} - Personal Hub{% endblock %}
 
 {% block extra_css %}
-<link rel="stylesheet" href="/static/css/cofre.css">
-<link rel="stylesheet" href="/static/css/totp_auth.css">
+<link rel="stylesheet" href="{{ static_url('css/cofre.css') }}">
+<link rel="stylesheet" href="{{ static_url('css/totp_auth.css') }}">
 {% endblock %}
 
 {% block content %}
@@ -200,6 +200,6 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="/static/js/crypto_gcm.js"></script>
-<script src="/static/js/totp_auth.js"></script>
+<script src="{{ static_url('js/crypto_gcm.js') }}"></script>
+<script src="{{ static_url('js/totp_auth.js') }}"></script>
 {% endblock %}

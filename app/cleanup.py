@@ -258,3 +258,76 @@ def executar_limpeza_temporarios() -> dict:
         arquivos += a1 + a2
         bytes_total += b1 + b2
     return {"arquivos": arquivos, "bytes": bytes_total}
+
+
+def caminho_storage(escopo: str, kind: str, sessao_id: str, nome: str) -> Path:
+    if escopo not in ESCOPOS_ARQUIVO:
+        raise ValueError("Escopo invalido")
+    if kind not in ("upload", "output"):
+        raise ValueError("Tipo invalido")
+    if not _SESSAO_RE.match(sessao_id or ""):
+        raise ValueError("Sessao invalida")
+    if not nome or "/" in nome or "\\" in nome or nome in (".", "..") or ".." in nome:
+        raise ValueError("Nome invalido")
+    base = UPLOADS_DIR if kind == "upload" else OUTPUTS_DIR
+    root = (base / escopo).resolve()
+    caminho = (base / escopo / sessao_id / nome).resolve()
+    if caminho != root and root not in caminho.parents:
+        raise ValueError("Caminho invalido")
+    return caminho
+
+
+def listar_arquivos(escopo: str) -> dict:
+    migrar_sessoes_legado()
+    if escopo not in ESCOPOS_ARQUIVO:
+        return {"escopo": escopo, "itens": [], "arquivos": 0, "bytes": 0}
+
+    itens: list[dict] = []
+    for kind, base in (("upload", UPLOADS_DIR / escopo), ("output", OUTPUTS_DIR / escopo)):
+        if not base.exists():
+            continue
+        for item in _iter_arquivos(base):
+            try:
+                rel = item.relative_to(base)
+                if len(rel.parts) != 2:
+                    continue
+                sessao_id = rel.parts[0]
+                if not _SESSAO_RE.match(sessao_id):
+                    continue
+                st = item.stat()
+                itens.append({
+                    "kind": kind,
+                    "sessao_id": sessao_id,
+                    "nome": item.name,
+                    "bytes": st.st_size,
+                    "mtime": int(st.st_mtime),
+                    "ext": item.suffix.lower(),
+                })
+            except (OSError, ValueError):
+                continue
+
+    itens.sort(key=lambda x: x["mtime"], reverse=True)
+    return {
+        "escopo": escopo,
+        "itens": itens,
+        "arquivos": len(itens),
+        "bytes": sum(i["bytes"] for i in itens),
+    }
+
+
+def remover_arquivo(escopo: str, kind: str, sessao_id: str, nome: str) -> dict:
+    migrar_sessoes_legado()
+    caminho = caminho_storage(escopo, kind, sessao_id, nome)
+    if not caminho.is_file():
+        raise FileNotFoundError("Arquivo nao encontrado")
+    size = caminho.stat().st_size
+    caminho.unlink(missing_ok=True)
+
+    pasta = caminho.parent
+    try:
+        if pasta.is_dir() and not any(pasta.iterdir()):
+            pasta.rmdir()
+    except OSError:
+        pass
+
+    return {"ok": True, "bytes": size, "nome": nome}

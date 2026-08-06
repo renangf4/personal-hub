@@ -20,10 +20,43 @@
             <p class="hub-subtitle mb-0">{{ tool.descricao }}</p>
         </div>
     </div>
-    <button type="button" class="btn btn-sm btn-limpar btn-limpar-escopo" data-escopo="{% if categoria %}{{ categoria.slug }}{% else %}{{ tool.slug }}{% endif %}" title="Apaga uploads e arquivos gerados">
-        <i class="bi bi-trash3"></i> <span class="btn-limpar-escopo-label">Limpar dados temporarios</span>
-    </button>
+    <div class="d-flex align-items-center gap-2 flex-wrap">
+        {% if controles in ("imagem", "video", "wp-screenshot") %}
+        <button type="button" class="btn btn-sm btn-storage" id="btn-storage" data-escopo="{% if categoria %}{{ categoria.slug }}{% elif tool.familia is defined %}{{ tool.familia }}{% else %}{{ tool.slug }}{% endif %}" title="Ver arquivos salvos">
+            <i class="bi bi-hdd"></i> Storage
+        </button>
+        {% endif %}
+        <button type="button" class="btn btn-sm btn-limpar btn-limpar-escopo" data-escopo="{% if categoria %}{{ categoria.slug }}{% elif tool.familia is defined %}{{ tool.familia }}{% else %}{{ tool.slug }}{% endif %}" title="Apaga uploads e arquivos gerados">
+            <i class="bi bi-trash3"></i> <span class="btn-limpar-escopo-label">Limpar dados temporarios</span>
+        </button>
+    </div>
 </div>
+
+{% if controles in ("imagem", "video", "wp-screenshot") %}
+<div class="modal fade" id="modal-storage" tabindex="-1" aria-labelledby="modal-storage-title" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content hub-card">
+            <div class="modal-header border-secondary">
+                <div>
+                    <h2 class="modal-title h5 mb-0" id="modal-storage-title">Storage</h2>
+                    <div class="small text-secondary" id="storage-resumo">Carregando...</div>
+                </div>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+            </div>
+            <div class="modal-body">
+                <div id="storage-grid" class="storage-grid"></div>
+                <div id="storage-vazio" class="text-secondary text-center py-5 d-none">Nenhum arquivo neste escopo.</div>
+            </div>
+            <div class="modal-footer border-secondary justify-content-between">
+                <button type="button" class="btn btn-sm btn-limpar" id="btn-storage-apagar-tudo">
+                    <i class="bi bi-trash3"></i> Apagar tudo
+                </button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Fechar</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
 
 <div class="card hub-card mb-4">
     <div class="card-body p-4">
@@ -61,23 +94,28 @@
                     <small class="text-secondary">Mantem proporcao. {% if controles == "video" %}Altura ajusta automaticamente.{% else %}Imagens menores nao sao alteradas.{% endif %}</small>
                 </div>
             </div>
+            {% endif %}
 
+            {% if controles in ("imagem", "video", "wp-screenshot") %}
             <div class="mb-3 col-md-5">
                 <label class="form-label d-flex justify-content-between">
                     <span>Qualidade</span>
-                    <span><strong id="quality-value">100</strong>%</span>
+                    <span><strong id="quality-value">{% if controles == "wp-screenshot" %}50{% else %}90{% endif %}</strong>%</span>
                 </label>
-                <input type="range" class="form-range" name="quality" id="input-quality" min="1" max="100" value="100">
+                <input type="range" class="form-range" name="quality" id="input-quality" min="1" max="100" value="{% if controles == 'wp-screenshot' %}50{% else %}90{% endif %}">
                 <small class="text-secondary">
                     {% if controles == "imagem" %}
                         Em WebP/JPEG: 100% = melhor qualidade. Em PNG: controla compressao.
+                    {% elif controles == "wp-screenshot" %}
+                        Menor = mais comprimido (menos cores). 50% ≈ 64 cores. Ideal pra preview WP.
                     {% else %}
                         100% = qualidade alta (CRF baixo). Quanto menor, mais comprimido.
                     {% endif %}
                 </small>
             </div>
+            {% endif %}
 
-            {% if controles == "imagem" %}
+            {% if controles in ("imagem", "wp-screenshot") %}
             <div id="estimativa-wrap" class="alert alert-secondary py-2 d-none col-md-5">
                 <div class="small">
                     <div><strong>Estimativa</strong> <span class="text-secondary">(1º arquivo)</span></div>
@@ -88,21 +126,15 @@
             {% endif %}
 
             {% if controles == "video" %}
-            <div class="mb-3">
-                <button type="button" id="btn-estimar-video" class="btn btn-outline-info btn-sm">
-                    <i class="bi bi-calculator"></i> Estimar tamanho (1º arquivo)
-                </button>
-                <div id="estimativa-wrap" class="alert alert-secondary py-2 mt-2 d-none col-md-6">
-                    <div class="small">
-                        <div><strong>Estimativa</strong> <span class="text-secondary">(baseada em 4s codificados)</span></div>
-                        <div>Duracao: <span id="est-duracao">-</span></div>
-                        <div>Original: <span id="est-original">-</span></div>
-                        <div>Saida: <span id="est-novo">-</span> <span id="est-delta" class="text-success"></span></div>
-                        <div id="est-aviso" class="text-warning small mt-1"></div>
-                    </div>
+            <div id="estimativa-wrap" class="alert alert-secondary py-2 d-none col-md-6">
+                <div class="small">
+                    <div><strong>Estimativa</strong> <span class="text-secondary">(baseada em 4s codificados)</span></div>
+                    <div>Duracao: <span id="est-duracao">-</span></div>
+                    <div>Original: <span id="est-original">-</span></div>
+                    <div>Saida: <span id="est-novo">-</span> <span id="est-delta" class="text-success"></span></div>
+                    <div id="est-aviso" class="text-warning small mt-1"></div>
                 </div>
             </div>
-            {% endif %}
             {% endif %}
 
             <button type="submit" class="btn btn-primary">
@@ -119,7 +151,7 @@
     </div>
 </div>
 
-<div id="resultados-wrap" class="d-none">
+<div id="resultados-wrap" class="d-none" data-controles="{{ controles }}">
     <h2 class="h6 text-secondary text-uppercase mb-2">Resultados</h2>
     <div class="list-group" id="resultados"></div>
 </div>
@@ -193,12 +225,16 @@
     }
 
     let debounceTimer = null;
-    let lastFile = null;
+    let estimativaSeq = 0;
+    let estimativaAbort = null;
 
     async function estimarImagem() {
         if (!fileInput.files || !fileInput.files.length) return;
         const file = fileInput.files[0];
-        lastFile = file;
+        const seq = ++estimativaSeq;
+
+        if (estimativaAbort) estimativaAbort.abort();
+        estimativaAbort = new AbortController();
 
         const form = document.getElementById('form-processar');
         const slugAtual = form.dataset.slug || (form.elements['formato'] && form.elements['formato'].value) || '{{ tool.slug }}';
@@ -217,70 +253,114 @@
         elDelta.textContent = '';
 
         try {
-            const resp = await fetch('/api/imagem/estimar', { method: 'POST', body: fd });
+            const resp = await fetch('/api/imagem/estimar', {
+                method: 'POST',
+                body: fd,
+                signal: estimativaAbort.signal,
+            });
             const data = await resp.json();
-            if (lastFile !== file) return;
+            if (seq !== estimativaSeq) return;
             mostrarResultadoEstimativa(file, data);
         } catch (err) {
+            if (err && err.name === 'AbortError') return;
+            if (seq !== estimativaSeq) return;
+            elNovo.textContent = 'erro';
+        }
+    }
+
+    async function estimarVideo() {
+        if (!fileInput.files || !fileInput.files.length) return;
+        const file = fileInput.files[0];
+        const seq = ++estimativaSeq;
+
+        if (estimativaAbort) estimativaAbort.abort();
+        estimativaAbort = new AbortController();
+
+        const form = document.getElementById('form-processar');
+        const slugAtual = form.dataset.slug || (form.elements['formato'] && form.elements['formato'].value) || '{{ tool.slug }}';
+
+        const fd = new FormData();
+        fd.append('slug', slugAtual);
+        fd.append('arquivo', file);
+        fd.append('quality', quality.value);
+        if (widthInput && !widthInput.disabled) {
+            fd.append('max_width', widthInput.value);
+        }
+
+        wrap.classList.remove('d-none');
+        elOriginal.textContent = formatBytes(file.size);
+        elNovo.textContent = 'calculando...';
+        elDelta.textContent = '';
+        if (elDuracao) elDuracao.textContent = '-';
+        if (elAviso) elAviso.textContent = '';
+
+        try {
+            const resp = await fetch('/api/video/estimar', {
+                method: 'POST',
+                body: fd,
+                signal: estimativaAbort.signal,
+            });
+            const data = await resp.json();
+            if (seq !== estimativaSeq) return;
+            mostrarResultadoEstimativa(file, data);
+        } catch (err) {
+            if (err && err.name === 'AbortError') return;
+            if (seq !== estimativaSeq) return;
+            elNovo.textContent = 'erro';
+            if (elAviso) elAviso.textContent = err.message || '';
+        }
+    }
+
+    async function estimarWpScreenshot() {
+        if (!fileInput.files || !fileInput.files.length) return;
+        const file = fileInput.files[0];
+        const seq = ++estimativaSeq;
+
+        if (estimativaAbort) estimativaAbort.abort();
+        estimativaAbort = new AbortController();
+
+        const fd = new FormData();
+        fd.append('arquivo', file);
+        fd.append('quality', quality.value);
+
+        wrap.classList.remove('d-none');
+        elOriginal.textContent = formatBytes(file.size);
+        elNovo.textContent = 'calculando...';
+        elDelta.textContent = '';
+
+        try {
+            const resp = await fetch('/api/wp-screenshot/estimar', {
+                method: 'POST',
+                body: fd,
+                signal: estimativaAbort.signal,
+            });
+            const data = await resp.json();
+            if (seq !== estimativaSeq) return;
+            mostrarResultadoEstimativa(file, data);
+        } catch (err) {
+            if (err && err.name === 'AbortError') return;
+            if (seq !== estimativaSeq) return;
             elNovo.textContent = 'erro';
         }
     }
 
     function agendarEstimativa() {
-        if (controles !== 'imagem') return;
+        if (controles !== 'imagem' && controles !== 'video' && controles !== 'wp-screenshot') return;
         clearTimeout(debounceTimer);
-        debounceTimer = setTimeout(estimarImagem, 350);
+        const delay = controles === 'video' ? 600 : 350;
+        debounceTimer = setTimeout(() => {
+            if (controles === 'video') estimarVideo();
+            else if (controles === 'wp-screenshot') estimarWpScreenshot();
+            else estimarImagem();
+        }, delay);
     }
 
-    if (controles === 'imagem') {
+    if (controles === 'imagem' || controles === 'video' || controles === 'wp-screenshot') {
         fileInput.addEventListener('change', agendarEstimativa);
-        quality.addEventListener('input', agendarEstimativa);
+        if (quality) quality.addEventListener('input', agendarEstimativa);
         if (widthInput) widthInput.addEventListener('input', agendarEstimativa);
         const selFormato = document.getElementById('select-formato');
         if (selFormato) selFormato.addEventListener('change', agendarEstimativa);
-    }
-
-    const btnEstimarVideo = document.getElementById('btn-estimar-video');
-    if (btnEstimarVideo) {
-        btnEstimarVideo.addEventListener('click', async () => {
-            if (!fileInput.files || !fileInput.files.length) {
-                alert('Selecione um arquivo primeiro.');
-                return;
-            }
-            const file = fileInput.files[0];
-            const fd = new FormData();
-            const form = document.getElementById('form-processar');
-            const slugAtual = form.dataset.slug || (form.elements['formato'] && form.elements['formato'].value) || '{{ tool.slug }}';
-            fd.append('slug', slugAtual);
-            fd.append('arquivo', file);
-            fd.append('quality', quality.value);
-            if (widthInput && !widthInput.disabled) {
-                fd.append('max_width', widthInput.value);
-            }
-
-            wrap.classList.remove('d-none');
-            elOriginal.textContent = formatBytes(file.size);
-            elNovo.textContent = 'calculando...';
-            elDelta.textContent = '';
-            if (elDuracao) elDuracao.textContent = '-';
-            if (elAviso) elAviso.textContent = '';
-
-            btnEstimarVideo.disabled = true;
-            const textoOriginal = btnEstimarVideo.innerHTML;
-            btnEstimarVideo.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Estimando...';
-
-            try {
-                const resp = await fetch('/api/video/estimar', { method: 'POST', body: fd });
-                const data = await resp.json();
-                mostrarResultadoEstimativa(file, data);
-            } catch (err) {
-                elNovo.textContent = 'erro';
-                if (elAviso) elAviso.textContent = err.message;
-            } finally {
-                btnEstimarVideo.disabled = false;
-                btnEstimarVideo.innerHTML = textoOriginal;
-            }
-        });
     }
 })();
 </script>

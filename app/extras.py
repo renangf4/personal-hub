@@ -180,7 +180,7 @@ TOOL_META: dict[str, dict] = {
         "descricao": "Padroniza imagens em 1200x900 PNG otimizado.",
         "icone": "bi-window",
         "aceita": "image/*",
-        "controles": "none",
+        "controles": "wp-screenshot",
         "extra": "wp-screenshot",
     },
     "unlock_pdf": {

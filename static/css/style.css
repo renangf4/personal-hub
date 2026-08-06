@@ -230,6 +230,49 @@ body {
     color: #ff6961 !important;
 }
 
+.btn-storage {
+    color: #e8c36a !important;
+    border-color: rgba(232, 195, 106, 0.5) !important;
+    background: rgba(232, 195, 106, 0.12) !important;
+}
+
+.btn-storage:hover {
+    color: #ffe09a !important;
+    border-color: rgba(232, 195, 106, 0.75) !important;
+    background: rgba(232, 195, 106, 0.2) !important;
+}
+
+.storage-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(12.5rem, 1fr));
+    gap: 1rem;
+}
+
+.storage-card {
+    cursor: default;
+}
+
+.storage-card__preview {
+    text-decoration: none;
+    color: inherit;
+    display: block;
+}
+
+.storage-card__del {
+    flex-shrink: 0;
+    padding: 0.25rem 0.45rem;
+}
+
+#modal-storage .modal-content {
+    background: var(--hub-surface);
+    border: 1px solid var(--hub-border);
+}
+
+#modal-storage .modal-header,
+#modal-storage .modal-footer {
+    border-color: var(--hub-border) !important;
+}
+
 .btn-destruir {
     color: #fff !important;
     border-color: var(--hub-red) !important;
@@ -491,6 +534,140 @@ body {
 .list-group-item-danger {
     background: rgba(255, 69, 58, 0.1);
     color: #ffd0cd;
+}
+
+.resultados-preview {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(11.5rem, 1fr));
+    gap: 1rem;
+}
+
+.resultados-preview--video {
+    grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
+}
+
+.resultado-card {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    max-width: 100%;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--hub-border);
+    border-radius: var(--hub-radius);
+    box-shadow: var(--hub-shadow);
+    overflow: hidden;
+    text-decoration: none;
+    color: inherit;
+    transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease;
+}
+
+a.resultado-card:hover {
+    transform: translateY(-3px);
+    border-color: rgba(10, 132, 255, 0.4);
+    background: rgba(28, 34, 46, 0.85);
+    color: inherit;
+}
+
+.resultado-card__preview {
+    position: relative;
+    aspect-ratio: 1;
+    display: block;
+    overflow: hidden;
+    background-color: #12161e;
+    background-image:
+        linear-gradient(45deg, #1a2030 25%, transparent 25%),
+        linear-gradient(-45deg, #1a2030 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, #1a2030 75%),
+        linear-gradient(-45deg, transparent 75%, #1a2030 75%);
+    background-size: 16px 16px;
+    background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+}
+
+.resultado-card__preview--video {
+    aspect-ratio: 16 / 9;
+    background-image: none;
+    background-color: #0d1118;
+}
+
+.resultado-card__preview img,
+.resultado-card__preview video {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block;
+}
+
+.resultado-card__placeholder {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--hub-muted);
+    font-size: 2rem;
+    background: #12161e;
+}
+
+.resultado-card__preview--erro {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-image: none;
+    background: rgba(255, 69, 58, 0.12);
+    color: #ff9b94;
+    font-size: 1.75rem;
+}
+
+.resultado-card__meta {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.7rem 0.8rem;
+    border-top: 1px solid var(--hub-border);
+    min-width: 0;
+}
+
+.resultado-card__info {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+}
+
+.resultado-card__nome {
+    font-size: 0.85rem;
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.resultado-card__peso {
+    font-size: 0.75rem;
+    color: var(--hub-muted);
+}
+
+.resultado-card__acao {
+    flex-shrink: 0;
+    color: var(--hub-blue);
+    font-size: 0.95rem;
+}
+
+.resultado-card__hint {
+    flex-shrink: 0;
+    font-size: 0.75rem;
+    color: var(--hub-muted);
+    max-width: 45%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.resultado-card--erro {
+    border-color: rgba(255, 69, 58, 0.35);
 }
 
 .badge {

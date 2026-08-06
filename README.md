@@ -6,9 +6,9 @@ Hub privado com utilitarios pessoais no navegador (`http://localhost:7777`). Sem
 
 Instale sob demanda pela **Loja** (`/loja`):
 
-- **Video** — MP4, WebM, GIF, MKV, MOV (FFmpeg embutido)
-- **Imagem** — WebP, PNG, JPEG, GIF, BMP, TIFF
-- **Screenshot WordPress** — padroniza em 1200x900 PNG
+- **Video** — MP4, WebM, GIF, MKV, MOV (FFmpeg embutido); qualidade padrao 90%; estimativa automatica; resultados em card com preview
+- **Imagem** — WebP, PNG, JPEG, GIF, BMP, TIFF; qualidade padrao 90%; estimativa automatica; resultados em card com preview
+- **Screenshot WordPress** — padroniza em 1200x900 PNG comprimido; qualidade padrao 50%; estimativa de tamanho
 - **Desbloquear PDF** — senhas salvas, senha unica, wordlist ou PIN numerico
 - **Assistente de IA Local** — chat com Ollama em tela cheia; anexos; carteiras por foco; contexto sugerido pela RAM livre (com folga pra nao travar o PC)
 - **DNS e Whois** — DNS (incl. SPF/DMARC/CAA), Whois, IP/geo, HTTP/TLS, portas, ping/traceroute, crt.sh, RBL, Shodan / AbuseIPDB / VirusTotal (keys opcionais)

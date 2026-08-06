@@ -15,12 +15,15 @@ from . import auth, config, db, registry, store
 from .cleanup import (
     OUTPUTS_DIR,
     UPLOADS_DIR,
+    caminho_storage,
     escopo_de_slug,
     executar_limpeza,
     executar_limpeza_temporarios,
     info_armazenamento,
     info_temporarios,
+    listar_arquivos,
     migrar_sessoes_legado,
+    remover_arquivo,
 )
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -30,11 +33,25 @@ STATIC_DIR = BASE_DIR / "static"
 app = FastAPI(title="Personal Hub", docs_url=None, redoc_url=None)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+
+
+def static_url(path: str) -> str:
+    """URL de asset com ?v=mtime para invalidar cache quando o arquivo mudar."""
+    rel = path.lstrip("/").removeprefix("static/")
+    arquivo = STATIC_DIR / rel
+    try:
+        ver = int(arquivo.stat().st_mtime)
+    except OSError:
+        ver = int(time.time())
+    return f"/static/{rel}?v={ver}"
+
+
 templates.env.globals.update({
     "hub_mode": config.MODE,
     "hub_bind_label": config.BIND_LABEL,
     "hub_auth_required": config.AUTH_REQUIRED,
     "hub_is_lan": config.IS_LAN,
+    "static_url": static_url,
 })
 
 
@@ -78,6 +95,13 @@ def _imagem():
     mod = registry.modulo("convert_image")
     if mod is None:
         raise HTTPException(status_code=404, detail="Ferramenta de imagem nao instalada. Abra a Loja.")
+    return mod
+
+
+def _wp_screenshot():
+    mod = registry.modulo("wp_screenshot")
+    if mod is None:
+        raise HTTPException(status_code=404, detail="Screenshot WordPress nao instalado. Abra a Loja.")
     return mod
 
 
@@ -344,6 +368,9 @@ async def processar(
         resultados = tool["modulo"].processar(
             entradas, output_dir, max_width=largura, quality=q, formato=tool["formato"]
         )
+    elif slug == "wp-screenshot":
+        q_wp = quality if quality and quality > 0 else 50
+        resultados = tool["modulo"].processar(entradas, output_dir, quality=q_wp)
     elif slug == "unlock-pdf":
         modo_unlock = (modo or "salvas").strip().lower()
         if modo_unlock not in ("salvas", "unica", "wordlist", "numerico"):
@@ -383,6 +410,9 @@ async def processar(
     for r in resultados:
         if r["ok"] and r["saida"]:
             r["download_url"] = f"/download/{escopo}/{sessao_id}/{r['saida']}"
+            caminho = OUTPUTS_DIR / escopo / sessao_id / r["saida"]
+            if caminho.is_file():
+                r["bytes"] = caminho.stat().st_size
 
     return JSONResponse({"sessao_id": sessao_id, "escopo": escopo, "resultados": resultados})
 
@@ -427,6 +457,25 @@ async def api_webp_estimar(
     return await api_imagem_estimar(arquivo, quality, max_width, slug)
 
 
+@app.post("/api/wp-screenshot/estimar")
+async def api_wp_screenshot_estimar(
+    arquivo: UploadFile = File(...),
+    quality: int = Form(50),
+):
+    wp = _wp_screenshot()
+    conteudo = await arquivo.read()
+    try:
+        tamanho = wp.estimar(conteudo, quality=quality if quality and quality > 0 else 50)
+        return {
+            "ok": True,
+            "original": len(conteudo),
+            "estimado": tamanho,
+            "nome": arquivo.filename,
+        }
+    except Exception as e:
+        return JSONResponse(status_code=400, content={"ok": False, "msg": str(e)})
+
+
 @app.post("/api/video/estimar")
 async def api_video_estimar(
     slug: str = Form(...),
@@ -452,12 +501,18 @@ async def api_video_estimar(
 
 
 @app.get("/download/{escopo}/{sessao_id}/{nome}")
-def download(escopo: str, sessao_id: str, nome: str):
+def download(escopo: str, sessao_id: str, nome: str, inline: int = 0):
     if ".." in escopo or ".." in sessao_id or ".." in nome:
         raise HTTPException(status_code=400)
     caminho = OUTPUTS_DIR / escopo / sessao_id / nome
     if not caminho.is_file():
         raise HTTPException(status_code=404)
+    if inline:
+        return FileResponse(
+            caminho,
+            filename=nome,
+            content_disposition_type="inline",
+        )
     return FileResponse(caminho, filename=nome)
 
 
@@ -486,6 +541,40 @@ def api_limpar_agora_escopo(escopo: str):
         return {"ok": True, "escopo": escopo, **resultado}
     resultado = executar_limpeza(escopo)
     return {"ok": True, "escopo": escopo, **resultado}
+
+
+@app.get("/api/storage/{escopo}")
+def api_storage_listar(escopo: str):
+    if escopo not in ("video", "imagem", "wp-screenshot"):
+        raise HTTPException(status_code=400, detail="Escopo sem browser de storage")
+    return {"ok": True, **listar_arquivos(escopo)}
+
+
+@app.get("/api/storage/{escopo}/{kind}/{sessao_id}/{nome}")
+def api_storage_arquivo(escopo: str, kind: str, sessao_id: str, nome: str, inline: int = 1):
+    if escopo not in ("video", "imagem", "wp-screenshot"):
+        raise HTTPException(status_code=400, detail="Escopo invalido")
+    try:
+        caminho = caminho_storage(escopo, kind, sessao_id, nome)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    if not caminho.is_file():
+        raise HTTPException(status_code=404)
+    if inline:
+        return FileResponse(caminho, filename=nome, content_disposition_type="inline")
+    return FileResponse(caminho, filename=nome)
+
+
+@app.delete("/api/storage/{escopo}/{kind}/{sessao_id}/{nome}")
+def api_storage_remover(escopo: str, kind: str, sessao_id: str, nome: str):
+    if escopo not in ("video", "imagem", "wp-screenshot"):
+        raise HTTPException(status_code=400, detail="Escopo invalido")
+    try:
+        return remover_arquivo(escopo, kind, sessao_id, nome)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
 
 
 @app.get("/api/senhas")
