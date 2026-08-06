@@ -77,6 +77,8 @@ Modo LAN:
 - **Modo LAN**: bind `0.0.0.0` + senha compartilhada (`HUB_PASSWORD` / argumento).
 - **Loja** instala e remove pacotes opcionais sem sujar a raiz do projeto; mostra deps, dados persistentes e o caminho em `storage/`.
 - **Limpeza**: temporarios (video/imagem/PDF) separado de **Destruir tudo** (inclui vaults, chats, senhas e keys).
+- **Storage** (Imagem / Video / Screenshot WP): browser com cards, preview, apagar um ou todos.
+- Assets estaticos com `?v=mtime` pra nao ficar JS/CSS velho no navegador.
 - Home mostra uso de armazenamento por ferramenta (KB/MB, conversas, keys).
 - **SQLite local** em `storage/hub.db` (senhas PDF, chats IA, settings como key Shodan).
 - **Vaults criptografados** (`.hubvault`, `.hubfake`, `.hubtotp`) — ciphertext em disco; senha-mestra so no navegador.
