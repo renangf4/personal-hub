@@ -2,6 +2,7 @@ import asyncio
 import json
 import os
 import platform
+import re
 import shutil
 import subprocess
 import sys
@@ -14,9 +15,16 @@ import httpx
 
 OLLAMA_BASE_URL = "http://localhost:11434"
 MODELO_PADRAO = "qwen2.5-coder:3b"
-CONTEXT_PADRAO = 32768
-# Folga minima pra o SO nao travar (Ollama nao expoe teto de RAM nativo).
-RAM_FOLGA_BYTES = 500 * 1024 * 1024
+# Default alinhado ao uso diario de codigo (Ollama tipico: 4k–16k).
+CONTEXT_PADRAO = 16384
+# Folga do SO/browser/Ollama — 500 MB era apertado demais.
+RAM_FOLGA_BYTES = int(1.5 * 1024 * 1024 * 1024)
+# Com modelo quase todo na GPU, ainda precisa de um pouco de RAM de sistema.
+RAM_FOLGA_COM_GPU_BYTES = int(0.8 * 1024 * 1024 * 1024)
+# Folga na VRAM (driver / fragmentacao).
+VRAM_FOLGA_BYTES = int(0.5 * 1024 * 1024 * 1024)
+# Reserva de tokens pra resposta do modelo dentro do num_ctx.
+CTX_RESERVA_RESPOSTA = 0.22
 
 
 def obter_ram() -> dict | None:
@@ -65,8 +73,6 @@ def obter_ram() -> dict | None:
             return {"total": total, "disponivel": livre, "usada": total - livre}
 
         if sistema == "Darwin":
-            import re
-
             total = int(subprocess.check_output(["sysctl", "-n", "hw.memsize"], text=True).strip())
             vm = subprocess.check_output(["vm_stat"], text=True)
             page = 4096
@@ -85,6 +91,86 @@ def obter_ram() -> dict | None:
     return None
 
 
+def obter_vram() -> dict | None:
+    """VRAM NVIDIA livre (Windows/Linux via nvidia-smi). Escolhe a GPU com mais livre."""
+    if platform.system() not in ("Windows", "Linux"):
+        return None
+    exe = shutil.which("nvidia-smi")
+    if not exe:
+        return None
+    kwargs: dict = {
+        "text": True,
+        "timeout": 3,
+        "stderr": subprocess.DEVNULL,
+    }
+    if platform.system() == "Windows":
+        kwargs["creationflags"] = 0x08000000  # CREATE_NO_WINDOW
+    try:
+        out = subprocess.check_output(
+            [
+                exe,
+                "--query-gpu=name,memory.total,memory.free,memory.used",
+                "--format=csv,noheader,nounits",
+            ],
+            **kwargs,
+        )
+    except Exception:
+        return None
+
+    melhor: dict | None = None
+    for linha in out.strip().splitlines():
+        partes = [p.strip() for p in linha.split(",")]
+        if len(partes) < 4:
+            continue
+        try:
+            nome = partes[0]
+            total = int(float(partes[1]) * 1024 * 1024)
+            livre = int(float(partes[2]) * 1024 * 1024)
+            usada = int(float(partes[3]) * 1024 * 1024)
+        except (TypeError, ValueError):
+            continue
+        cand = {
+            "nome": nome,
+            "total": total,
+            "disponivel": livre,
+            "usada": usada,
+        }
+        if melhor is None or livre > melhor["disponivel"]:
+            melhor = cand
+    return melhor
+
+
+def memoria_suficiente(
+    need_bytes: int,
+    ram: dict | None,
+    vram: dict | None,
+) -> bool:
+    """True se a estimativa cabe: preferindo VRAM, com overflow parcial na RAM."""
+    need = max(0, int(need_bytes))
+    if vram and vram.get("disponivel", 0) > 0:
+        gpu_cap = max(0, int(vram["disponivel"]) - VRAM_FOLGA_BYTES)
+        on_gpu = min(need, gpu_cap)
+        on_ram = need - on_gpu
+        if on_ram <= 0:
+            # Quase tudo na GPU — so exige folga menor de RAM de sistema.
+            if not ram or not ram.get("disponivel"):
+                return True
+            return int(ram["disponivel"]) >= RAM_FOLGA_COM_GPU_BYTES
+        if not ram or not ram.get("disponivel"):
+            return False
+        return int(ram["disponivel"]) - on_ram >= RAM_FOLGA_BYTES
+
+    if not ram or not ram.get("disponivel"):
+        return False
+    return int(ram["disponivel"]) - need >= RAM_FOLGA_BYTES
+
+
+def _modo_memoria(vram: dict | None) -> str:
+    if vram and vram.get("disponivel", 0) > 0:
+        return "gpu"
+    return "cpu"
+
+
 CONTEXTOS = [
     {
         "tokens": 4096,
@@ -92,8 +178,8 @@ CONTEXTOS = [
         "nome": "Perguntas curtas",
         "descricao": "Pouco uso de memoria. Historico curto.",
         "indicado": False,
-        "ram": "~2 GB",
-        "ram_gb": 2,
+        "ram": "",
+        "ram_gb": 0,
     },
     {
         "tokens": 8192,
@@ -101,113 +187,458 @@ CONTEXTOS = [
         "nome": "Uso leve",
         "descricao": "Chat simples e trechos pequenos de codigo.",
         "indicado": False,
-        "ram": "~4 GB",
-        "ram_gb": 4,
+        "ram": "",
+        "ram_gb": 0,
     },
     {
         "tokens": 16384,
         "label": "16k",
-        "nome": "Codigo moderado",
-        "descricao": "Arquivos medios. Bom em maquinas com ~8 GB de RAM.",
+        "nome": "Codigo diario",
+        "descricao": "Arquivos medios. Bom equilibrio na maioria dos PCs.",
         "indicado": False,
-        "ram": "~8 GB",
-        "ram_gb": 8,
+        "ram": "",
+        "ram_gb": 0,
     },
     {
         "tokens": 32768,
         "label": "32k",
-        "nome": "Equilibrado",
-        "descricao": "Codigo + historico. Equilibrio tipico (~16 GB RAM).",
+        "nome": "Historico longo",
+        "descricao": "Codigo + historico. Exige mais RAM livre.",
         "indicado": False,
-        "ram": "~16 GB",
-        "ram_gb": 16,
+        "ram": "",
+        "ram_gb": 0,
     },
     {
         "tokens": 65536,
         "label": "64k",
         "nome": "Logs / multi-arquivo",
-        "descricao": "Logs grandes e varios arquivos. Usa bastante RAM (e VRAM se o modelo estiver na GPU).",
+        "descricao": "Logs grandes e varios arquivos. Pesado em RAM/VRAM.",
         "indicado": False,
-        "ram": "~20 GB",
-        "ram_gb": 20,
+        "ram": "",
+        "ram_gb": 0,
     },
     {
         "tokens": 131072,
         "label": "128k",
         "nome": "Contexto maximo",
-        "descricao": "Projetos grandes. Exige muita RAM; com GPU, tambem consome VRAM.",
+        "descricao": "Projetos grandes. So com muita RAM/VRAM livre.",
         "indicado": False,
-        "ram": "~32 GB",
-        "ram_gb": 32,
+        "ram": "",
+        "ram_gb": 0,
     },
 ]
 
 CONTEXTOS_PERMITIDOS = {c["tokens"] for c in CONTEXTOS}
 
 
-def sugerir_contexto(ram: dict | None) -> int:
-    """Maior contexto cuja estimativa + folga de 500 MB cabe na RAM livre."""
-    fallback = next(
-        (c["tokens"] for c in CONTEXTOS if c["tokens"] == CONTEXT_PADRAO),
-        CONTEXTOS[0]["tokens"],
-    )
-    if not ram or not ram.get("disponivel"):
+def _parse_tamanho_gb(texto: str | None) -> float | None:
+    if not texto:
+        return None
+    m = re.search(r"([\d]+(?:[.,]\d+)?)\s*GB", str(texto), re.I)
+    if not m:
+        return None
+    return float(m.group(1).replace(",", "."))
+
+
+def _tamanho_modelo_gb(modelo: str, tamanhos: dict[str, float] | None = None) -> float:
+    """Estima GB em disco/carregado do modelo (preset ou mapa do /api/tags)."""
+    nome = (modelo or "").strip()
+    low = nome.lower()
+    if tamanhos:
+        if nome in tamanhos:
+            return tamanhos[nome]
+        for k, v in tamanhos.items():
+            kl = k.lower()
+            if kl == low or kl.startswith(low + ":") or low.startswith(kl.split(":")[0]):
+                return v
+    for preset in MODELOS_PRESET:
+        slug = preset["slug"].lower()
+        if low == slug or low.startswith(slug + ":") or slug in low:
+            gb = _parse_tamanho_gb(preset.get("tamanho"))
+            if gb:
+                return gb
+    # fallback conservador (7B Q4 típico)
+    return 4.7
+
+
+def estimar_ram_gb(modelo: str, num_ctx: int, tamanhos: dict[str, float] | None = None) -> float:
+    """Heuristica: pesos do modelo + KV cache proporcional ao contexto.
+
+    Nao e exato (arquitetura/quantizacao variam), mas acompanha o que se ve
+    no `ollama ps` bem melhor que uma tabela fixa so por num_ctx.
+    """
+    modelo_gb = _tamanho_modelo_gb(modelo, tamanhos)
+    ctx = max(512, int(num_ctx or CONTEXT_PADRAO))
+    pesos = modelo_gb * 1.2
+    # KV cresce com ctx e com tamanho do modelo
+    kv = (ctx / 4096.0) * modelo_gb * 0.42
+    return round(max(1.0, pesos + kv), 1)
+
+
+def _fmt_ram_gb(gb: float) -> str:
+    if gb >= 10:
+        return f"~{gb:.0f} GB"
+    return f"~{gb:.1f} GB"
+
+
+def estimar_tokens(texto: str) -> int:
+    """Estimativa barata (~4 chars/token) pra PT + codigo."""
+    if not texto:
+        return 0
+    return max(1, len(texto) // 4)
+
+
+def encaixar_historico(mensagens: list[dict], num_ctx: int) -> tuple[list[dict], dict | None]:
+    """Mantem system + mensagens mais recentes dentro do orcamento do contexto.
+
+    Equivalente leve ao truncation/compaction das UIs locais: nao resume com
+    outro modelo, so omite turnos antigos (e trunca o mais recente se preciso).
+    """
+    ctx = max(1024, int(num_ctx or CONTEXT_PADRAO))
+    budget = max(512, int(ctx * (1.0 - CTX_RESERVA_RESPOSTA)))
+
+    system = [m for m in mensagens if m.get("role") == "system"]
+    resto = [m for m in mensagens if m.get("role") != "system"]
+
+    usados = sum(estimar_tokens(str(m.get("content") or "")) for m in system)
+    mantidas: list[dict] = []
+    omitidas = 0
+
+    for msg in reversed(resto):
+        conteudo = str(msg.get("content") or "")
+        tokens = estimar_tokens(conteudo)
+        if mantidas and usados + tokens > budget:
+            omitidas += 1
+            continue
+        if not mantidas and usados + tokens > budget:
+            # garante ao menos o ultimo turno (truncado)
+            chars = max(800, (budget - usados) * 4)
+            if len(conteudo) > chars:
+                conteudo = (
+                    conteudo[:chars]
+                    + "\n\n[... truncado pra caber no contexto ...]"
+                )
+            mantidas.append({**msg, "content": conteudo})
+            usados = budget
+            break
+        mantidas.append(msg)
+        usados += tokens
+
+    mantidas.reverse()
+    resultado = system + mantidas
+    aviso = None
+    if omitidas:
+        aviso = {
+            "tipo": "aviso",
+            "hub": True,
+            "msg": (
+                f"Historico antigo omitido ({omitidas} mensagem(ns)) "
+                f"pra caber no contexto {_label_ctx(ctx)} — padrao das UIs locais."
+            ),
+        }
+    return resultado, aviso
+
+
+def _contextos_com_estimativa(
+    modelo: str,
+    tamanhos: dict[str, float] | None = None,
+    ram: dict | None = None,
+    vram: dict | None = None,
+) -> list[dict]:
+    out = []
+    for c in CONTEXTOS:
+        gb = estimar_ram_gb(modelo, c["tokens"], tamanhos)
+        need = int(gb * (1024 ** 3))
+        item = {
+            **c,
+            "ram_gb": gb,
+            "ram": _fmt_ram_gb(gb),
+            "cabe": memoria_suficiente(need, ram, vram),
+        }
+        out.append(item)
+    return out
+
+
+def sugerir_contexto(
+    ram: dict | None,
+    modelo: str = MODELO_PADRAO,
+    tamanhos: dict[str, float] | None = None,
+    vram: dict | None = None,
+) -> int:
+    """Maior contexto cuja estimativa cabe (VRAM preferencial + overflow em RAM)."""
+    fallback = CONTEXT_PADRAO if CONTEXT_PADRAO in CONTEXTOS_PERMITIDOS else CONTEXTOS[0]["tokens"]
+    if (not ram or not ram.get("disponivel")) and (not vram or not vram.get("disponivel")):
         return fallback
-    livre_gb = ram["disponivel"] / (1024 ** 3)
-    folga_gb = RAM_FOLGA_BYTES / (1024 ** 3)
-    cabem = [
-        c for c in CONTEXTOS
-        if c.get("ram_gb", 0) + folga_gb <= livre_gb
-    ]
+    cabem = []
+    for c in CONTEXTOS:
+        need = int(estimar_ram_gb(modelo, c["tokens"], tamanhos) * (1024 ** 3))
+        if memoria_suficiente(need, ram, vram):
+            cabem.append(c["tokens"])
     if not cabem:
         return CONTEXTOS[0]["tokens"]
-    return cabem[-1]["tokens"]
+    return cabem[-1]
 
 
-def limitar_contexto(num_ctx: int, ram: dict | None = None) -> tuple[int | None, dict | None]:
-    """Ajusta num_ctx pra caber na RAM livre com folga.
-
-    Retorna (ctx_ou_None, aviso_ou_erro).
-    """
+def limitar_contexto(
+    num_ctx: int,
+    ram: dict | None = None,
+    modelo: str = MODELO_PADRAO,
+    tamanhos: dict[str, float] | None = None,
+    vram: dict | None = None,
+) -> tuple[int | None, dict | None]:
+    """Ajusta num_ctx pra caber na memoria disponivel (GPU/RAM), sem matar mid-gen."""
     ram = ram if ram is not None else obter_ram()
+    vram = vram if vram is not None else obter_vram()
     pedido = num_ctx if num_ctx in CONTEXTOS_PERMITIDOS else CONTEXT_PADRAO
-    if not ram or not ram.get("disponivel"):
+
+    need_pedido = int(estimar_ram_gb(modelo, pedido, tamanhos) * (1024 ** 3))
+    if memoria_suficiente(need_pedido, ram, vram):
         return pedido, None
 
-    livre = int(ram["disponivel"])
-    if livre < RAM_FOLGA_BYTES:
-        livre_gb = livre / (1024 ** 3)
+    seguro = sugerir_contexto(ram, modelo, tamanhos, vram)
+    need_min = int(estimar_ram_gb(modelo, CONTEXTOS[0]["tokens"], tamanhos) * (1024 ** 3))
+    if not memoria_suficiente(need_min, ram, vram):
+        partes = []
+        if ram and ram.get("disponivel") is not None:
+            partes.append(f"RAM livre {ram['disponivel'] / (1024 ** 3):.1f} GB")
+        if vram and vram.get("disponivel") is not None:
+            partes.append(
+                f"VRAM livre {vram['disponivel'] / (1024 ** 3):.1f} GB"
+                + (f" ({vram.get('nome')})" if vram.get("nome") else "")
+            )
+        onde = " / ".join(partes) if partes else "sem leitura de memoria"
         return None, {
             "erro": True,
             "msg": (
-                f"RAM livre critica ({livre_gb:.1f} GB). "
-                "Libere memoria (feche programas) antes de gerar — "
-                "folga minima de 500 MB pra nao travar o PC."
+                f"Memoria baixa ({onde}). "
+                "Feche programas / outras apps na GPU, ou escolha um modelo mais leve "
+                "antes de gerar."
             ),
         }
 
-    seguro = sugerir_contexto(ram)
-    meta = next((c for c in CONTEXTOS if c["tokens"] == pedido), None)
-    need = int((meta or {}).get("ram_gb", 16) * (1024 ** 3))
-    if livre - need >= RAM_FOLGA_BYTES:
-        return pedido, None
-
-    aviso = {
+    modo = "GPU/VRAM" if _modo_memoria(vram) == "gpu" else "RAM"
+    return seguro, {
         "tipo": "aviso",
         "hub": True,
         "pedido": pedido,
         "usado": seguro,
         "msg": (
             f"Contexto reduzido de {_label_ctx(pedido)} para {_label_ctx(seguro)} "
-            f"pra preservar ~500 MB de RAM livre e evitar travar o PC."
+            f"(estimativa {_fmt_ram_gb(estimar_ram_gb(modelo, pedido, tamanhos))} "
+            f"com `{modelo}`) pra caber com folga em {modo}."
         ),
     }
-    return seguro, aviso
 
 
 def _label_ctx(tokens: int) -> str:
     meta = next((c for c in CONTEXTOS if c["tokens"] == tokens), None)
     return meta["label"] if meta else str(tokens)
+
+
+async def descarregar_modelo(modelo: str) -> dict:
+    """Remove o modelo da RAM/VRAM do Ollama (CLI stop primeiro — API keep_alive:0 pode travar)."""
+    if not modelo:
+        return {"ok": False, "msg": "Modelo vazio"}
+
+    erros: list[str] = []
+    ok_cli = False
+    ok_api = False
+    nomes = _variantes_nome_modelo(modelo)
+
+    # 1) CLI `ollama stop` — mais confiavel e nao enfileira atras de /api/chat
+    exe = detectar_ollama_instalado()
+    if exe:
+        flags = _create_no_window() if platform.system() == "Windows" else 0
+        for nome in nomes:
+            try:
+                r = subprocess.run(
+                    [exe, "stop", nome],
+                    capture_output=True,
+                    text=True,
+                    timeout=20,
+                    creationflags=flags,
+                )
+                if r.returncode == 0:
+                    ok_cli = True
+                    break
+                if r.stderr or r.stdout:
+                    erros.append((r.stderr or r.stdout).strip()[:120])
+            except Exception as e:
+                erros.append(f"cli:{e}")
+
+    # 2) API keep_alive 0 — timeout curto pra nao segurar o hub se o runner estiver preso
+    if not ok_cli:
+        try:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(12.0, connect=2.0)) as client:
+                for nome in nomes:
+                    try:
+                        resp = await client.post(
+                            f"{OLLAMA_BASE_URL}/api/generate",
+                            json={
+                                "model": nome,
+                                "prompt": "",
+                                "keep_alive": 0,
+                                "stream": False,
+                            },
+                        )
+                        if resp.status_code < 400:
+                            ok_api = True
+                            break
+                        erros.append(f"api:{resp.status_code}")
+                    except Exception as e:
+                        erros.append(f"api:{e}")
+        except httpx.ConnectError:
+            return {"ok": False, "msg": "Ollama nao esta rodando"}
+        except Exception as e:
+            erros.append(f"http:{e}")
+
+    # 3) Confirma /api/ps; se ainda estiver la, mata llama-server no Windows
+    ainda = await _modelo_ainda_carregado(nomes)
+    if ainda and platform.system() == "Windows":
+        try:
+            await _matar_llama_server_se_inchado(limite_mb=200)
+            ainda = await _modelo_ainda_carregado(nomes)
+        except Exception as e:
+            erros.append(f"kill:{e}")
+
+    if ok_cli or ok_api or not ainda:
+        return {
+            "ok": True,
+            "modelo": modelo,
+            "via": "cli" if ok_cli else ("api" if ok_api else "kill"),
+        }
+    return {"ok": False, "msg": "; ".join(erros) or "Falha ao descarregar"}
+
+
+def _variantes_nome_modelo(modelo: str) -> list[str]:
+    """DeepHat/... e DeepHat/...:latest — o Ollama oscila entre os dois."""
+    m = (modelo or "").strip()
+    if not m:
+        return []
+    out = [m]
+    if ":" not in m.split("/")[-1]:
+        out.append(m + ":latest")
+    elif m.endswith(":latest"):
+        out.append(m[: -len(":latest")])
+    # únicos preservando ordem
+    vistos: set[str] = set()
+    uniq: list[str] = []
+    for n in out:
+        if n not in vistos:
+            vistos.add(n)
+            uniq.append(n)
+    return uniq
+
+
+async def _modelo_ainda_carregado(nomes: list[str]) -> bool:
+    alvos = {n.lower() for n in nomes}
+    try:
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            ps = await client.get(f"{OLLAMA_BASE_URL}/api/ps")
+            if ps.status_code != 200:
+                return False
+            for m in (ps.json() or {}).get("models") or []:
+                nome = (m.get("name") or m.get("model") or "").lower()
+                if not nome:
+                    continue
+                if nome in alvos or any(nome.startswith(a + ":") or a.startswith(nome) for a in alvos):
+                    return True
+                base = nome.split(":")[0]
+                if any(a.split(":")[0] == base for a in alvos):
+                    return True
+    except Exception:
+        return False
+    return False
+
+
+async def descarregar_todos() -> dict:
+    """Descarrega todos os modelos residentes; no Windows pode matar llama-server."""
+    nomes: list[str] = []
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            ps = await client.get(f"{OLLAMA_BASE_URL}/api/ps")
+            if ps.status_code == 200:
+                for m in (ps.json() or {}).get("models") or []:
+                    nome = m.get("name") or m.get("model") or ""
+                    if nome:
+                        nomes.append(nome)
+    except httpx.ConnectError:
+        return {"ok": False, "msg": "Ollama nao esta rodando"}
+    except Exception as e:
+        return {"ok": False, "msg": str(e)}
+
+    if not nomes:
+        # Mesmo sem entrada no /ps, llama-server orfao pode segurar RAM
+        if platform.system() == "Windows":
+            await _matar_llama_server_se_inchado(limite_mb=200)
+        return {"ok": True, "msg": "Nenhum modelo carregado", "modelos": []}
+
+    resultados = []
+    for nome in nomes:
+        resultados.append(await descarregar_modelo(nome))
+
+    ainda = []
+    try:
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            ps = await client.get(f"{OLLAMA_BASE_URL}/api/ps")
+            if ps.status_code == 200:
+                ainda = [
+                    (m.get("name") or m.get("model"))
+                    for m in (ps.json() or {}).get("models") or []
+                    if m.get("name") or m.get("model")
+                ]
+    except Exception:
+        pass
+
+    if ainda and platform.system() == "Windows":
+        await _matar_llama_server_se_inchado(limite_mb=200)
+        ainda = []
+
+    ok = all(r.get("ok") for r in resultados) and not ainda
+    return {
+        "ok": ok,
+        "msg": "Memoria liberada" if ok else "Parcial — ainda ha modelo carregado",
+        "modelos": nomes,
+        "detalhe": resultados,
+    }
+
+
+async def _matar_llama_server_se_inchado(limite_mb: int = 800) -> None:
+    """Ultimo recurso: encerra llama-server.exe se ainda estiver comendo RAM."""
+    if platform.system() != "Windows":
+        return
+    flags = _create_no_window()
+    try:
+        out = subprocess.run(
+            ["tasklist", "/FI", "IMAGENAME eq llama-server.exe", "/FO", "CSV", "/NH"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            creationflags=flags,
+        )
+    except Exception:
+        return
+    texto = (out.stdout or "").strip()
+    if not texto or "llama-server.exe" not in texto.lower():
+        return
+    # CSV: "llama-server.exe","pid","session","session#","mem"
+    for linha in texto.splitlines():
+        partes = [p.strip().strip('"') for p in linha.split(",")]
+        if len(partes) < 5:
+            continue
+        mem_raw = partes[-1].replace(".", "").replace(",", "").replace("K", "").replace(" ", "")
+        try:
+            mem_kb = int(mem_raw)
+        except ValueError:
+            mem_kb = limite_mb * 1024
+        if mem_kb >= limite_mb * 1024:
+            subprocess.run(
+                ["taskkill", "/F", "/IM", "llama-server.exe", "/T"],
+                capture_output=True,
+                timeout=15,
+                creationflags=flags,
+            )
+            return
 
 FOCOS = {
     "codigo": {
@@ -500,6 +931,7 @@ def _system_prompt_para(modelo: str) -> str:
 async def verificar_status(modelo: str = MODELO_PADRAO) -> dict:
     """Verifica se o Ollama esta rodando e quais modelos preset ja foram baixados."""
     exe = detectar_ollama_instalado()
+    modelo = (modelo or MODELO_PADRAO).strip() or MODELO_PADRAO
     info = {
         "ollama_ativo": False,
         "ollama_instalado": bool(exe),
@@ -509,7 +941,7 @@ async def verificar_status(modelo: str = MODELO_PADRAO) -> dict:
         "modelo_disponivel": False,
         "modelos": [],
         "focos": list(FOCOS.values()),
-        "contextos": [{**c} for c in CONTEXTOS],
+        "contextos": [],
         "contexto_padrao": CONTEXT_PADRAO,
         "contexto_sugerido": CONTEXT_PADRAO,
         "presets": [
@@ -517,13 +949,22 @@ async def verificar_status(modelo: str = MODELO_PADRAO) -> dict:
         ],
         "msg": "",
     }
+    tamanhos: dict[str, float] = {}
     try:
         async with httpx.AsyncClient(timeout=3.0) as client:
             resp = await client.get(f"{OLLAMA_BASE_URL}/api/tags")
             resp.raise_for_status()
             data = resp.json()
             info["ollama_ativo"] = True
-            modelos = [m.get("name", "") for m in data.get("models", [])]
+            modelos = []
+            for m in data.get("models", []):
+                nome = m.get("name", "")
+                if not nome:
+                    continue
+                modelos.append(nome)
+                size = m.get("size")
+                if isinstance(size, (int, float)) and size > 0:
+                    tamanhos[nome] = size / (1024 ** 3)
             info["modelos"] = modelos
             info["modelo_disponivel"] = _modelo_disponivel(modelo, modelos)
             for preset in info["presets"]:
@@ -532,13 +973,21 @@ async def verificar_status(modelo: str = MODELO_PADRAO) -> dict:
         info["msg"] = "Ollama nao esta rodando em localhost:11434"
     except Exception as e:
         info["msg"] = f"Erro ao consultar Ollama: {e}"
+
     info["ram"] = obter_ram()
-    sugerido = sugerir_contexto(info["ram"])
+    info["vram"] = obter_vram()
+    info["memoria_modo"] = _modo_memoria(info["vram"])
+    sugerido = sugerir_contexto(info["ram"], modelo, tamanhos, info["vram"])
     info["contexto_sugerido"] = sugerido
+    info["contexto_padrao"] = sugerido
     info["ram_folga_bytes"] = RAM_FOLGA_BYTES
+    info["vram_folga_bytes"] = VRAM_FOLGA_BYTES
+    info["modelo_tamanho_gb"] = round(_tamanho_modelo_gb(modelo, tamanhos), 1)
+    info["contextos"] = _contextos_com_estimativa(
+        modelo, tamanhos, info["ram"], info["vram"]
+    )
     for c in info["contextos"]:
         c["indicado"] = c["tokens"] == sugerido
-    info["contexto_padrao"] = sugerido
     return info
 
 
@@ -885,7 +1334,8 @@ async def stream_chat(
     msgs.extend(mensagens)
 
     ram = obter_ram()
-    ctx, aviso = limitar_contexto(num_ctx, ram)
+    vram = obter_vram()
+    ctx, aviso = limitar_contexto(num_ctx, ram, modelo, vram=vram)
     if aviso and aviso.get("erro"):
         yield aviso
         return
@@ -898,10 +1348,15 @@ async def stream_chat(
     if aviso:
         yield aviso
 
+    msgs, aviso_hist = encaixar_historico(msgs, ctx)
+    if aviso_hist:
+        yield aviso_hist
+
     payload = {
         "model": modelo,
         "messages": msgs,
         "stream": True,
+        "keep_alive": "30s",
         "options": {
             "temperature": 0.3,
             "num_ctx": ctx,
@@ -923,25 +1378,7 @@ async def stream_chat(
                     }
                     return
 
-                ultimo_check = time.monotonic()
                 async for linha in resp.aiter_lines():
-                    agora = time.monotonic()
-                    if agora - ultimo_check >= 1.5:
-                        ultimo_check = agora
-                        atual = obter_ram()
-                        if atual and atual["disponivel"] < RAM_FOLGA_BYTES:
-                            livre_gb = atual["disponivel"] / (1024 ** 3)
-                            yield {
-                                "erro": True,
-                                "parcial": True,
-                                "msg": (
-                                    f"Geracao interrompida: so restavam {livre_gb:.1f} GB de RAM "
-                                    "(folga minima 500 MB). Assim o PC nao trava — "
-                                    "feche programas ou use um contexto menor."
-                                ),
-                            }
-                            return
-
                     if not linha:
                         continue
                     try:
@@ -951,8 +1388,10 @@ async def stream_chat(
                     yield data
     except httpx.ConnectError:
         yield {"erro": True, "msg": "Ollama nao esta rodando em localhost:11434"}
+        return
     except Exception as e:
         yield {"erro": True, "msg": f"Falha no chat: {e}"}
+        return
 
 
 EXTENSOES_TEXTO = {

@@ -59,6 +59,7 @@
                 <button type="button" class="btn btn-sm btn-outline-primary d-none" data-rede-acao="whois" data-rede-modos="dominio,ip">Whois</button>
                 <button type="button" class="btn btn-sm btn-outline-primary d-none" data-rede-acao="ip" data-rede-modos="dominio,ip">IP / Geo</button>
                 <button type="button" class="btn btn-sm btn-outline-primary d-none" data-rede-acao="http" data-rede-modos="dominio,ip">HTTP / TLS</button>
+                <button type="button" class="btn btn-sm btn-outline-primary d-none" data-rede-acao="origem" data-rede-modos="dominio">Origem CF</button>
                 <button type="button" class="btn btn-sm btn-outline-primary d-none" data-rede-acao="portas" data-rede-modos="dominio,ip">Portas</button>
                 <button type="button" class="btn btn-sm btn-outline-primary d-none" data-rede-acao="ping" data-rede-modos="dominio,ip">Ping</button>
                 <button type="button" class="btn btn-sm btn-outline-primary d-none" data-rede-acao="traceroute" data-rede-modos="dominio,ip">Traceroute</button>
@@ -67,8 +68,9 @@
                 <button type="button" class="btn btn-sm btn-outline-primary d-none" data-rede-acao="shodan" data-rede-key="shodan" data-rede-modos="dominio,ip">Shodan</button>
                 <button type="button" class="btn btn-sm btn-outline-primary d-none" data-rede-acao="abuseipdb" data-rede-key="abuseipdb" data-rede-modos="dominio,ip">AbuseIPDB</button>
                 <button type="button" class="btn btn-sm btn-outline-primary d-none" data-rede-acao="virustotal" data-rede-key="virustotal" data-rede-modos="dominio,ip">VirusTotal</button>
+                <button type="button" class="btn btn-sm btn-outline-primary d-none" data-rede-acao="osint" data-rede-modos="dominio,ip">OSINT</button>
             </div>
-            <small class="text-secondary">As opcoes mudam conforme o tipo. Shodan / AbuseIPDB / VirusTotal pedem API key.</small>
+            <small class="text-secondary">As opcoes mudam conforme o tipo. Shodan / AbuseIPDB / VirusTotal pedem API key. Sem key, use a aba OSINT.</small>
         </div>
 
         <div class="mb-0 d-none mt-3" id="rede-keys-wrap">
@@ -111,6 +113,7 @@
         <div class="tab-pane fade" id="pane-whois" role="tabpanel"><div id="rede-out-whois"></div></div>
         <div class="tab-pane fade" id="pane-ip" role="tabpanel"><div id="rede-out-ip"></div></div>
         <div class="tab-pane fade" id="pane-http" role="tabpanel"><div id="rede-out-http"></div></div>
+        <div class="tab-pane fade" id="pane-origem" role="tabpanel"><div id="rede-out-origem"></div></div>
         <div class="tab-pane fade" id="pane-portas" role="tabpanel"><div id="rede-out-portas"></div></div>
         <div class="tab-pane fade" id="pane-ping" role="tabpanel"><div id="rede-out-ping"></div></div>
         <div class="tab-pane fade" id="pane-traceroute" role="tabpanel"><div id="rede-out-traceroute"></div></div>
@@ -119,6 +122,7 @@
         <div class="tab-pane fade" id="pane-shodan" role="tabpanel"><div id="rede-out-shodan"></div></div>
         <div class="tab-pane fade" id="pane-abuseipdb" role="tabpanel"><div id="rede-out-abuseipdb"></div></div>
         <div class="tab-pane fade" id="pane-virustotal" role="tabpanel"><div id="rede-out-virustotal"></div></div>
+        <div class="tab-pane fade" id="pane-osint" role="tabpanel"><div id="rede-out-osint"></div></div>
     </div>
 </div>
 {% endblock %}

@@ -27,10 +27,12 @@
     const btnGerenciar = document.getElementById('ai-btn-gerenciar');
     const btnRenomear = document.getElementById('ai-btn-renomear');
     const btnExcluir = document.getElementById('ai-btn-excluir');
+    const btnLiberarMem = document.getElementById('ai-btn-liberar-mem');
     const mensagensEl = document.getElementById('ai-mensagens');
     const form = document.getElementById('ai-form');
     const input = document.getElementById('ai-input');
     const btnEnviar = document.getElementById('ai-btn-enviar');
+    const btnParar = document.getElementById('ai-btn-parar');
     const btnAnexo = document.getElementById('ai-btn-anexo');
     const fileInput = document.getElementById('ai-file');
     const anexosEl = document.getElementById('ai-anexos');
@@ -40,9 +42,11 @@
     let chatAtual = null;
     let chatsCache = [];
     let enviando = false;
+    /** @type {AbortController|null} */
+    let envioAbort = null;
     let ultimoStatus = null;
     let modoGerenciar = false;
-    const CTX_PADRAO = 32768;
+    const CTX_PADRAO = 16384;
     /** @type {File[]} */
     let anexosPendentes = [];
     const MAX_ANEXOS = 5;
@@ -96,64 +100,101 @@
     }
 
     function folgaGb() {
-        const bytes = (ultimoStatus && ultimoStatus.ram_folga_bytes) || (500 * 1024 * 1024);
+        const bytes = (ultimoStatus && ultimoStatus.ram_folga_bytes) || (1.5 * 1024 * 1024 * 1024);
         return bytes / (1024 * 1024 * 1024);
     }
 
-    function contextoExcedeRam(ctx, ram) {
-        const livre = livreGbUtil(ram);
-        if (livre == null || !ctx || ctx.ram_gb == null) return false;
+    function contextoExcedeMemoria(ctx) {
+        if (!ctx) return false;
+        if (typeof ctx.cabe === 'boolean') return !ctx.cabe;
+        const livre = livreGbUtil(ultimoStatus && ultimoStatus.ram);
+        if (livre == null || ctx.ram_gb == null) return false;
         return ctx.ram_gb + folgaGb() > livre;
     }
 
-    function rotuloContexto(c, sugerido, ram) {
+    function rotuloContexto(c, sugerido) {
         const base = `${c.label} — ${c.nome}`;
         const ramTxt = c.ram ? ` (${c.ram})` : '';
         if (c.tokens === sugerido) return `${base}${ramTxt} · sugerido`;
-        if (contextoExcedeRam(c, ram)) return `${base}${ramTxt} · acima da RAM livre`;
+        if (contextoExcedeMemoria(c)) {
+            const modo = (ultimoStatus && ultimoStatus.memoria_modo) === 'gpu'
+                ? 'acima da VRAM/RAM'
+                : 'acima da RAM livre';
+            return `${base}${ramTxt} · ${modo}`;
+        }
         return `${base}${ramTxt}`;
     }
 
     function atualizarRam(ram, opts) {
         if (!ramLivreEl) return;
-        if (!ram || !ram.disponivel) {
+        const vram = (opts && opts.vram) || (ultimoStatus && ultimoStatus.vram) || null;
+        if ((!ram || !ram.disponivel) && (!vram || !vram.disponivel)) {
             ramLivreEl.classList.add('d-none');
             ramLivreEl.textContent = '';
             return;
         }
-        const livre = formatGb(ram.disponivel);
-        const total = formatGb(ram.total);
-        const pctLivre = ram.total
-            ? Math.round((ram.disponivel / ram.total) * 100)
-            : 0;
+
         const lista = (opts && opts.contextos) || (ultimoStatus && ultimoStatus.contextos) || [];
         const tokens = opts && opts.tokens != null
             ? opts.tokens
             : (ctxSelect ? parseInt(ctxSelect.value, 10) : NaN);
         const atual = lista.find((c) => c.tokens === tokens);
-        const excede = contextoExcedeRam(atual, ram);
+        const excede = contextoExcedeMemoria(atual);
+        const modoGpu = (ultimoStatus && ultimoStatus.memoria_modo) === 'gpu' || !!(vram && vram.disponivel);
+
+        const partes = [];
+        let title = '';
+        let pctRef = 100;
+
+        if (vram && vram.disponivel != null && vram.total) {
+            const livreV = formatGb(vram.disponivel);
+            const totalV = formatGb(vram.total);
+            pctRef = Math.round((vram.disponivel / vram.total) * 100);
+            partes.push(
+                `<i class="bi bi-gpu-card me-1"></i>VRAM: <strong>${livreV}</strong> / ${totalV}`
+            );
+            title = (vram.nome ? vram.nome + ' — ' : '') +
+                `VRAM livre ${livreV} de ${totalV}. Ollama usa a GPU quando cabe.`;
+        }
+        if (ram && ram.disponivel != null && ram.total) {
+            const livre = formatGb(ram.disponivel);
+            const total = formatGb(ram.total);
+            const pctRam = Math.round((ram.disponivel / ram.total) * 100);
+            if (!modoGpu) pctRef = pctRam;
+            partes.push(
+                (partes.length ? ' · ' : '') +
+                `<i class="bi bi-memory me-1"></i>RAM: <strong>${livre}</strong> / ${total}`
+            );
+            title = (title ? title + ' ' : '') +
+                `RAM livre ${livre} de ${total} (${pctRam}%).`;
+        }
 
         ramLivreEl.classList.remove('d-none', 'ai-chat__ram--baixa', 'ai-chat__ram--ok', 'ai-chat__ram--aviso');
         if (excede) {
             ramLivreEl.classList.add('ai-chat__ram--aviso');
             ramLivreEl.innerHTML =
-                `<i class="bi bi-memory me-1"></i>RAM livre: <strong>${livre}</strong> / ${total}` +
+                partes.join('') +
                 ` <span class="ai-chat__ram-aviso">· contexto pode passar</span>`;
+            const est = atual && atual.ram_gb != null ? `~${atual.ram_gb} GB` : '?';
             ramLivreEl.title =
-                `O contexto selecionado estima ~${atual.ram_gb} GB; ha ${livre} livres (${pctLivre}%). Pode ficar lento ou travar.`;
+                `Contexto selecionado estima ${est}. ${title} Pode ficar lento ou usar overflow CPU/RAM.`;
         } else {
-            ramLivreEl.classList.add(pctLivre < 20 ? 'ai-chat__ram--baixa' : 'ai-chat__ram--ok');
-            ramLivreEl.innerHTML = `<i class="bi bi-memory me-1"></i>RAM livre: <strong>${livre}</strong> / ${total}`;
-            ramLivreEl.title = `Memoria RAM disponivel no sistema (${pctLivre}% livre)`;
+            ramLivreEl.classList.add(pctRef < 20 ? 'ai-chat__ram--baixa' : 'ai-chat__ram--ok');
+            ramLivreEl.innerHTML = partes.join('');
+            ramLivreEl.title = title.trim();
         }
+    }
+
+    function urlStatus() {
+        return '/api/ai/status?modelo=' + encodeURIComponent(modeloAtual());
     }
 
     async function verificarStatus() {
         try {
-            const resp = await fetch('/api/ai/status');
+            const resp = await fetch(urlStatus());
             const data = await resp.json();
             ultimoStatus = data;
-            atualizarRam(data.ram);
+            atualizarRam(data.ram, { vram: data.vram });
 
             if (!data.ollama_ativo) {
                 setStatus('erro', 'Ollama offline');
@@ -339,7 +380,7 @@
         const ram = opcoes.ram || (ultimoStatus && ultimoStatus.ram) || null;
         const lista = contextos && contextos.length
             ? contextos
-            : [{ tokens: CTX_PADRAO, label: '32k', nome: 'Equilibrado', indicado: false, ram: '~16 GB', ram_gb: 16 }];
+            : [{ tokens: CTX_PADRAO, label: '16k', nome: 'Codigo diario', indicado: false, ram: '', ram_gb: 0 }];
         const sugerido = opcoes.sugerido
             || (lista.find((c) => c.indicado) || {}).tokens
             || padrao
@@ -350,14 +391,14 @@
 
         ctxSelect.innerHTML = lista.map((c) => {
             const tip = c.descricao || '';
-            const texto = rotuloContexto(c, sugerido, ram);
+            const texto = rotuloContexto(c, sugerido);
             return `<option value="${c.tokens}" title="${escapeHtml(tip)}">${escapeHtml(texto)}</option>`;
         }).join('');
 
         let escolhido = null;
         if (ajustar) {
             const salvoOk = lista.find((c) => c.tokens === salvo);
-            if (salvoOk && !contextoExcedeRam(salvoOk, ram)) {
+            if (salvoOk && !contextoExcedeMemoria(salvoOk)) {
                 escolhido = salvo;
             } else {
                 escolhido = sugerido;
@@ -372,7 +413,11 @@
 
         ctxSelect.value = String(escolhido);
         if (ajustar) localStorage.setItem(LS_CTX, ctxSelect.value);
-        atualizarRam(ram, { contextos: lista, tokens: escolhido });
+        atualizarRam(ram, {
+            contextos: lista,
+            tokens: escolhido,
+            vram: (ultimoStatus && ultimoStatus.vram) || null,
+        });
     }
 
     function modeloAtual() {
@@ -389,6 +434,7 @@
     if (modeloSelect) {
         modeloSelect.addEventListener('change', () => {
             localStorage.setItem(LS_MODELO, modeloSelect.value);
+            verificarStatus();
         });
     }
 
@@ -397,7 +443,11 @@
             localStorage.setItem(LS_CTX, ctxSelect.value);
             const ram = ultimoStatus && ultimoStatus.ram;
             const lista = (ultimoStatus && ultimoStatus.contextos) || [];
-            atualizarRam(ram, { contextos: lista, tokens: parseInt(ctxSelect.value, 10) });
+            atualizarRam(ram, {
+                contextos: lista,
+                tokens: parseInt(ctxSelect.value, 10),
+                vram: (ultimoStatus && ultimoStatus.vram) || null,
+            });
         });
     }
 
@@ -572,7 +622,7 @@
 
     async function aplicarStatusPronto(st) {
         ultimoStatus = st;
-        atualizarRam(st.ram);
+        atualizarRam(st.ram, { vram: st.vram });
         pullWrap.classList.add('d-none');
         const algumBaixado = (st.presets || []).some(p => p.baixado);
         if (!algumBaixado) {
@@ -612,7 +662,7 @@
                 await new Promise(r => setTimeout(r, 1000));
                 let st;
                 try {
-                    const respSt = await fetch('/api/ai/status');
+                    const respSt = await fetch(urlStatus());
                     st = await respSt.json();
                 } catch (_) {
                     continue;
@@ -773,7 +823,7 @@
             input.disabled = false;
             btnEnviar.disabled = false;
             mensagensEl.innerHTML = '';
-            (data.mensagens || []).forEach(m => adicionarMensagem(m.role, m.conteudo));
+            (data.mensagens || []).forEach((m) => adicionarMensagem(m.role, m.conteudo, m));
             if (!data.mensagens || !data.mensagens.length) {
                 mensagensEl.innerHTML = `
                     <div class="ai-chat__empty text-secondary text-center py-5">
@@ -781,6 +831,7 @@
                         Envie sua primeira mensagem.
                     </div>`;
             }
+            atualizarBotoesEditar();
             renderListaChatsAtiva();
             input.focus();
         } catch (err) {
@@ -808,12 +859,14 @@
             </div>`;
     }
 
-    function adicionarMensagem(role, conteudo) {
+    function adicionarMensagem(role, conteudo, meta) {
         const vazio = mensagensEl.querySelector('.ai-chat__empty');
         if (vazio) vazio.remove();
 
         const wrap = document.createElement('div');
         wrap.className = `ai-chat__msg ai-chat__msg--${role}`;
+        if (meta && meta.id != null) wrap.dataset.id = String(meta.id);
+        wrap.dataset.conteudo = conteudo || '';
         wrap.innerHTML = `
             <span class="ai-chat__msg-role">${role === 'user' ? 'Voce' : 'Assistente'}</span>
             <div class="ai-chat__msg-corpo"></div>
@@ -821,9 +874,38 @@
         `;
         const corpo = wrap.querySelector('.ai-chat__msg-corpo');
         renderMarkdown(corpo, conteudo);
+        if (role === 'user') {
+            const acoes = document.createElement('div');
+            acoes.className = 'ai-chat__msg-acoes d-none';
+            acoes.innerHTML = `
+                <button type="button" class="btn btn-sm btn-outline-secondary ai-chat__btn-editar" title="Editar e reenviar">
+                    <i class="bi bi-pencil"></i> Editar
+                </button>
+            `;
+            wrap.appendChild(acoes);
+        }
         mensagensEl.appendChild(wrap);
         rolarFinal();
         return wrap;
+    }
+
+    function atualizarBotoesEditar() {
+        const users = mensagensEl.querySelectorAll('.ai-chat__msg--user');
+        users.forEach((el, idx) => {
+            const acoes = el.querySelector('.ai-chat__msg-acoes');
+            if (!acoes) return;
+            // Editar só a última pergunta do usuário (estilo ChatGPT)
+            acoes.classList.toggle('d-none', enviando || idx !== users.length - 1 || !el.dataset.id);
+        });
+    }
+
+    function setEnviandoUI(ativo) {
+        enviando = !!ativo;
+        if (btnEnviar) btnEnviar.classList.toggle('d-none', enviando);
+        if (btnParar) btnParar.classList.toggle('d-none', !enviando);
+        if (btnAnexo) btnAnexo.disabled = enviando;
+        input.disabled = enviando;
+        atualizarBotoesEditar();
     }
 
     function exibirMetricas(wrap, m) {
@@ -929,17 +1011,21 @@
         const texto = input.value.trim();
         if (!texto && !anexosPendentes.length) return;
 
-        enviando = true;
-        input.disabled = true;
-        btnEnviar.disabled = true;
-        if (btnAnexo) btnAnexo.disabled = true;
+        if (envioAbort) {
+            try { envioAbort.abort(); } catch (_) { /* ignore */ }
+        }
+        envioAbort = new AbortController();
+        setEnviandoUI(true);
+
         const filesEnvio = anexosPendentes.slice();
+        const textoEnvio = texto;
         input.value = '';
         anexosPendentes = [];
         renderAnexos();
 
-        const preview = texto || filesEnvio.map((f) => '📎 ' + f.name).join('\n');
-        adicionarMensagem('user', preview);
+        const preview = textoEnvio || filesEnvio.map((f) => '📎 ' + f.name).join('\n');
+        const wrapUser = adicionarMensagem('user', preview);
+        wrapUser.dataset.conteudo = textoEnvio;
         const wrapAssistente = adicionarMensagem('assistant', '');
         const corpoAssistente = wrapAssistente.querySelector('.ai-chat__msg-corpo');
         const cursor = document.createElement('span');
@@ -947,10 +1033,11 @@
         corpoAssistente.appendChild(cursor);
 
         let acumulado = '';
+        let paradoPeloUsuario = false;
 
         try {
             const fd = new FormData();
-            fd.append('conteudo', texto);
+            fd.append('conteudo', textoEnvio);
             fd.append('modelo', modeloAtual());
             fd.append('num_ctx', String(contextoAtual()));
             filesEnvio.forEach((f) => fd.append('arquivos', f, f.name));
@@ -958,6 +1045,7 @@
             const resp = await fetch(`/api/ai/chats/${chatAtual.id}/mensagens`, {
                 method: 'POST',
                 body: fd,
+                signal: envioAbort.signal,
             });
             if (!resp.ok || !resp.body) {
                 const txt = await resp.text();
@@ -979,7 +1067,11 @@
                     let ev;
                     try { ev = JSON.parse(linha); } catch (_) { continue; }
 
-                    if (ev.tipo === 'delta') {
+                    if (ev.tipo === 'user_msg' && ev.mensagem && ev.mensagem.id != null) {
+                        wrapUser.dataset.id = String(ev.mensagem.id);
+                        if (ev.mensagem.conteudo) wrapUser.dataset.conteudo = ev.mensagem.conteudo;
+                        atualizarBotoesEditar();
+                    } else if (ev.tipo === 'delta') {
                         acumulado += ev.conteudo;
                         renderMarkdown(corpoAssistente, acumulado);
                         corpoAssistente.appendChild(cursor);
@@ -991,8 +1083,14 @@
                         wrapAssistente.insertBefore(nota, corpoAssistente);
                     } else if (ev.tipo === 'erro') {
                         throw new Error(ev.msg || 'Erro do modelo');
+                    } else if (ev.tipo === 'parado') {
+                        paradoPeloUsuario = true;
+                        throw new Error(ev.msg || 'Geracao interrompida pelo usuario.');
                     } else if (ev.tipo === 'fim') {
                         cursor.remove();
+                        if (ev.mensagem && ev.mensagem.id != null) {
+                            wrapAssistente.dataset.id = String(ev.mensagem.id);
+                        }
                         renderMarkdown(corpoAssistente, acumulado);
                         exibirMetricas(wrapAssistente, ev.metricas);
                         rolarFinal();
@@ -1001,23 +1099,164 @@
             }
         } catch (err) {
             cursor.remove();
+            const abortado = (err && err.name === 'AbortError') || paradoPeloUsuario;
             if (acumulado) {
                 renderMarkdown(corpoAssistente, acumulado);
                 const errEl = document.createElement('div');
-                errEl.className = 'text-danger small mt-2';
-                errEl.textContent = 'Interrompido: ' + err.message;
+                errEl.className = 'text-warning small mt-2';
+                errEl.textContent = abortado
+                    ? 'Parado pelo usuario.'
+                    : ('Interrompido: ' + (err.message || err));
                 wrapAssistente.appendChild(errEl);
+            } else if (abortado) {
+                corpoAssistente.innerHTML = `<span class="text-secondary">Geracao cancelada.</span>`;
             } else {
-                corpoAssistente.innerHTML = `<span class="text-danger">Erro: ${escapeHtml(err.message)}</span>`;
+                corpoAssistente.innerHTML = `<span class="text-danger">Erro: ${escapeHtml(err.message || String(err))}</span>`;
             }
+            mostrarAcoesPosInterrupcao(wrapAssistente, textoEnvio, filesEnvio);
         } finally {
-            enviando = false;
-            input.disabled = false;
-            btnEnviar.disabled = false;
-            if (btnAnexo) btnAnexo.disabled = false;
+            envioAbort = null;
+            setEnviandoUI(false);
             input.focus();
             carregarChats();
         }
+    });
+
+    function mostrarAcoesPosInterrupcao(wrapAssistente, texto, files) {
+        if (!wrapAssistente) return;
+        wrapAssistente.querySelectorAll('.ai-chat__reenviar').forEach((el) => el.remove());
+        const bar = document.createElement('div');
+        bar.className = 'ai-chat__reenviar';
+        bar.innerHTML = `
+            <button type="button" class="btn btn-sm btn-outline-primary ai-chat__reenviar-btn">
+                <i class="bi bi-arrow-repeat"></i> Reenviar
+            </button>
+            <button type="button" class="btn btn-sm btn-outline-secondary ai-chat__editar-btn">
+                <i class="bi bi-pencil"></i> Editar pergunta
+            </button>
+        `;
+        bar.querySelector('.ai-chat__reenviar-btn').addEventListener('click', () => {
+            if (enviando) return;
+            input.value = texto || '';
+            anexosPendentes = (files && files.length) ? files.slice() : [];
+            renderAnexos();
+            form.requestSubmit();
+        });
+        bar.querySelector('.ai-chat__editar-btn').addEventListener('click', async () => {
+            if (enviando) return;
+            const lastUser = [...mensagensEl.querySelectorAll('.ai-chat__msg--user')].pop();
+            if (lastUser) await editarPergunta(lastUser, texto);
+            else {
+                input.value = texto || '';
+                input.focus();
+            }
+        });
+        wrapAssistente.appendChild(bar);
+        rolarFinal();
+    }
+
+    async function editarPergunta(wrapUser, textoOverride) {
+        if (enviando || !chatAtual || !wrapUser) return;
+        const msgId = wrapUser.dataset.id;
+        const texto = textoOverride != null ? textoOverride : (wrapUser.dataset.conteudo || '');
+        if (!msgId) {
+            input.value = texto;
+            input.focus();
+            return;
+        }
+        try {
+            const resp = await fetch(`/api/ai/chats/${chatAtual.id}/mensagens/${msgId}`, {
+                method: 'DELETE',
+            });
+            const data = await resp.json().catch(() => ({}));
+            if (!resp.ok) throw new Error(data.detail || 'Falha ao editar');
+
+            // Remove essa msg e tudo depois no DOM
+            let el = wrapUser;
+            while (el) {
+                const next = el.nextElementSibling;
+                el.remove();
+                el = next;
+            }
+            input.value = texto;
+            anexosPendentes = [];
+            renderAnexos();
+            atualizarBotoesEditar();
+            input.focus();
+        } catch (err) {
+            alert('Erro ao editar: ' + err.message);
+        }
+    }
+
+    mensagensEl.addEventListener('click', (e) => {
+        const btn = e.target.closest('.ai-chat__btn-editar');
+        if (!btn) return;
+        const wrapUser = btn.closest('.ai-chat__msg--user');
+        if (wrapUser) editarPergunta(wrapUser);
+    });
+
+    function descarregarModeloBeacon(modelo) {
+        // modelo vazio = descarrega todos os que estiverem na RAM (ver API)
+        const body = JSON.stringify({ modelo: modelo || '' });
+        try {
+            if (navigator.sendBeacon) {
+                const blob = new Blob([body], { type: 'application/json' });
+                if (navigator.sendBeacon('/api/ai/descarregar', blob)) return;
+            }
+        } catch (_) { /* ignore */ }
+        fetch('/api/ai/descarregar', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body,
+            keepalive: true,
+        }).catch(() => {});
+    }
+
+    async function liberarMemoriaOllama(opts) {
+        const silencioso = !!(opts && opts.silencioso);
+        if (btnLiberarMem) btnLiberarMem.disabled = true;
+        try {
+            const resp = await fetch('/api/ai/descarregar', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ modelo: '' }),
+            });
+            const data = await resp.json().catch(() => ({}));
+            if (!silencioso) {
+                if (resp.ok && data.ok) {
+                    setStatus('ok', data.msg || 'Memoria liberada');
+                } else {
+                    setStatus('warn', (data && data.msg) || 'Falha ao liberar');
+                }
+            }
+            setTimeout(verificarStatus, 400);
+            return !!(resp.ok && data.ok);
+        } catch (_) {
+            if (!silencioso) setStatus('erro', 'Falha ao liberar');
+            return false;
+        } finally {
+            if (btnLiberarMem) btnLiberarMem.disabled = false;
+        }
+    }
+
+    if (btnLiberarMem) {
+        btnLiberarMem.addEventListener('click', () => liberarMemoriaOllama());
+    }
+
+    if (btnParar) {
+        btnParar.addEventListener('click', () => {
+            if (!enviando || !envioAbort) return;
+            envioAbort.abort();
+            descarregarModeloBeacon('');
+        });
+    }
+
+    window.addEventListener('pagehide', () => {
+        if (enviando && envioAbort) {
+            try { envioAbort.abort(); } catch (_) { /* ignore */ }
+        }
+        // Sempre libera ao sair do chat — keep_alive do Ollama nao deve segurar 15GB
+        descarregarModeloBeacon('');
     });
 
     input.addEventListener('keydown', (e) => {
@@ -1030,13 +1269,17 @@
     verificarStatus();
     setInterval(() => {
         if (document.hidden) return;
-        fetch('/api/ai/status')
+        fetch(urlStatus())
             .then((r) => r.json())
             .then((data) => {
                 if (ultimoStatus) {
                     ultimoStatus.ram = data.ram;
+                    ultimoStatus.vram = data.vram;
+                    ultimoStatus.memoria_modo = data.memoria_modo;
                     ultimoStatus.contexto_sugerido = data.contexto_sugerido;
                     if (data.contextos) ultimoStatus.contextos = data.contextos;
+                    if (data.ram_folga_bytes) ultimoStatus.ram_folga_bytes = data.ram_folga_bytes;
+                    if (data.vram_folga_bytes) ultimoStatus.vram_folga_bytes = data.vram_folga_bytes;
                 }
                 // Atualiza labels/aviso sem forcar troca do select
                 if (ctxSelect && !ctxSelect.classList.contains('d-none') && data.contextos) {
@@ -1046,7 +1289,7 @@
                         ajustarSelect: false,
                     });
                 } else {
-                    atualizarRam(data.ram);
+                    atualizarRam(data.ram, { vram: data.vram });
                 }
             })
             .catch(() => {});

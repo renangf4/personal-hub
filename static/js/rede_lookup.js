@@ -4,6 +4,7 @@
         whois: 'Whois',
         ip: 'IP / Geo',
         http: 'HTTP / TLS',
+        origem: 'Origem CF',
         portas: 'Portas',
         ping: 'Ping',
         traceroute: 'Traceroute',
@@ -12,6 +13,7 @@
         shodan: 'Shodan',
         abuseipdb: 'AbuseIPDB',
         virustotal: 'VirusTotal',
+        osint: 'OSINT',
     };
 
     const ENDPOINTS = {
@@ -19,6 +21,7 @@
         whois: '/api/rede/whois',
         ip: '/api/rede/ip',
         http: '/api/rede/http',
+        origem: '/api/rede/origem',
         portas: '/api/rede/portas',
         ping: '/api/rede/ping',
         traceroute: '/api/rede/traceroute',
@@ -27,6 +30,7 @@
         shodan: '/api/rede/shodan',
         abuseipdb: '/api/rede/abuseipdb',
         virustotal: '/api/rede/virustotal',
+        osint: '/api/rede/osint',
     };
 
     const alvoEl = document.getElementById('rede-alvo');
@@ -241,6 +245,16 @@
         if (estado === 'erro') btn.classList.add('rede-tab--erro');
     }
 
+    /** Sucesso real da fonte — nao so HTTP 200 do hub. */
+    function consultaOk(data) {
+        if (!data || data.ok === false) return false;
+        const rs = data.resultados;
+        if (Array.isArray(rs) && rs.length > 0 && rs.every((r) => r && r.ok === false)) {
+            return false;
+        }
+        return true;
+    }
+
     function tabela(linhas) {
         const rows = linhas.filter(([, v]) => v != null && v !== '').map(([k, v]) =>
             `<tr><th>${escapeHtml(k)}</th><td><code>${escapeHtml(String(v))}</code></td></tr>`
@@ -353,18 +367,122 @@
         el.innerHTML = `<p class="small text-secondary mb-2">Alvo: <code>${escapeHtml(data.alvo)}</code></p>${httpHtml}${tlsHtml}`;
     }
 
+    function renderOrigem(data) {
+        const el = out('origem');
+        if (!data || !data.ok) {
+            el.innerHTML = `<p class="text-danger mb-0">${escapeHtml(data && data.msg ? data.msg : 'Falha')}</p>`;
+            return;
+        }
+
+        const cfBadge = data.cloudflare_detectado
+            ? '<span class="badge text-bg-warning">Cloudflare detectado</span>'
+            : '<span class="badge text-bg-secondary">Cloudflare nao evidente</span>';
+
+        const avisos = (data.avisos || []).map((a) =>
+            `<div class="alert alert-warning py-2 small mb-2">${escapeHtml(a)}</div>`
+        ).join('');
+
+        const possiveis = data.possiveis_origem || [];
+        let origemHtml;
+        if (possiveis.length) {
+            const rows = possiveis.map((c) =>
+                `<tr>
+                    <td><code class="text-success">${escapeHtml(c.ip)}</code></td>
+                    <td class="small">${(c.fontes || []).map(escapeHtml).join(', ')}</td>
+                    <td class="small"><code>${(c.hosts || []).map(escapeHtml).join('<br>') || '—'}</code></td>
+                </tr>`
+            ).join('');
+            origemHtml = `<div class="table-responsive"><table class="table table-sm table-dark align-middle mb-0">
+                <thead><tr><th>IP (fora do CF)</th><th>Fontes</th><th>Hosts</th></tr></thead>
+                <tbody>${rows}</tbody></table></div>`;
+        } else {
+            origemHtml = '<p class="text-secondary mb-0">Nenhum IP fora das faixas Cloudflare encontrado com as heuristicas atuais.</p>';
+        }
+
+        const dnsRows = (data.dns_atual || []).map((d) =>
+            `<tr><td><code>${escapeHtml(d.ip)}</code></td><td>${d.cloudflare ? '<span class="text-warning">Cloudflare</span>' : 'direto'}</td></tr>`
+        ).join('');
+
+        const hdrs = Object.entries(data.headers || {}).map(([k, v]) => [k, v]);
+        const subs = (data.subdominios || []).map((s) => {
+            const ips = (s.ips || []).map((i) =>
+                `${escapeHtml(i.ip)}${i.cloudflare ? ' <span class="text-warning">(CF)</span>' : ' <span class="text-success">(fora)</span>'}`
+            ).join(', ');
+            return `<tr><td><code>${escapeHtml(s.host)}</code></td><td>${ips}</td></tr>`;
+        }).join('');
+
+        el.innerHTML = `
+            <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+                <span class="small text-secondary">Alvo: <code>${escapeHtml(data.alvo)}</code></span>
+                ${cfBadge}
+            </div>
+            ${data.nota ? `<p class="small text-secondary">${escapeHtml(data.nota)}</p>` : ''}
+            ${avisos}
+            ${(data.sinais_cloudflare || []).length ? `<p class="small mb-2">Sinais: ${data.sinais_cloudflare.map(escapeHtml).join(' · ')}</p>` : ''}
+            <h3 class="h6 text-secondary mt-3">Possiveis IPs de origin</h3>
+            ${origemHtml}
+            <h3 class="h6 text-secondary mt-3">DNS atual</h3>
+            <div class="table-responsive"><table class="table table-sm table-dark align-middle mb-0">
+                <thead><tr><th>IP</th><th>Tipo</th></tr></thead>
+                <tbody>${dnsRows || '<tr><td colspan="2" class="text-secondary">Nenhum</td></tr>'}</tbody>
+            </table></div>
+            ${hdrs.length ? `<h3 class="h6 text-secondary mt-3">Headers relevantes</h3>${tabela(hdrs)}` : ''}
+            ${(data.redirects || []).length ? `<h3 class="h6 text-secondary mt-3">Redirects</h3><pre class="rede-whois-raw small mb-0">${escapeHtml(data.redirects.join('\n'))}</pre>` : ''}
+            ${(data.spf || []).length ? `<h3 class="h6 text-secondary mt-3">SPF</h3><pre class="rede-whois-raw small mb-0">${escapeHtml(data.spf.join('\n'))}</pre>` : ''}
+            ${(data.mx || []).length ? `<h3 class="h6 text-secondary mt-3">MX</h3><p class="mb-0"><code>${data.mx.map(escapeHtml).join('<br>')}</code></p>` : ''}
+            ${subs ? `<h3 class="h6 text-secondary mt-3">Subdominios que resolvem</h3>
+                <div class="table-responsive"><table class="table table-sm table-dark align-middle mb-0">
+                <thead><tr><th>Host</th><th>IPs</th></tr></thead><tbody>${subs}</tbody></table></div>` : ''}`;
+    }
+
     function renderPortas(data) {
         const el = out('portas');
         if (!data || !data.ok) {
             el.innerHTML = `<p class="text-danger mb-0">${escapeHtml(data && data.msg ? data.msg : 'Falha')}</p>`;
             return;
         }
-        el.innerHTML = `<p class="small text-secondary mb-2">Alvo: <code>${escapeHtml(data.alvo)}</code> → <code>${escapeHtml(data.ip)}</code></p>
-            ${tabela([
+
+        const avisos = (data.avisos || []).map((a) =>
+            `<div class="alert alert-warning py-2 small mb-2">${escapeHtml(a)}</div>`
+        ).join('');
+
+        const detalhes = data.detalhes || [];
+        const rows = detalhes.length
+            ? detalhes.map((d) => {
+                const aberta = d.estado === 'aberta';
+                const cls = aberta ? 'text-success' : (d.estado === 'erro' ? 'text-warning' : 'text-secondary');
+                const label = aberta ? 'aberta' : (d.estado === 'erro' ? 'erro' : 'fechada / filtrada');
+                return `<tr>
+                    <td><code>${escapeHtml(String(d.porta))}</code></td>
+                    <td>${escapeHtml(d.servico || '—')}</td>
+                    <td class="${cls}">${escapeHtml(label)}</td>
+                </tr>`;
+            }).join('')
+            : '';
+
+        const listaHtml = rows
+            ? `<div class="table-responsive"><table class="table table-sm table-dark align-middle mb-0">
+                <thead><tr><th>Porta</th><th>Servico</th><th>Resultado</th></tr></thead>
+                <tbody>${rows}</tbody></table></div>`
+            : `<p class="mb-0">${tabela([
                 ['Abertas', (data.abertas || []).join(', ') || 'nenhuma'],
-                ['Testadas', data.testadas],
                 ['Fechadas/filtradas', data.fechadas_qtd],
-            ])}`;
+            ])}</p>`;
+
+        el.innerHTML = `
+            <p class="small text-secondary mb-2">
+                Scan TCP em <code>${escapeHtml(data.alvo)}</code> → <code>${escapeHtml(data.ip)}</code>
+                ${data.cloudflare ? ' <span class="badge text-bg-warning">Cloudflare</span>' : ''}
+            </p>
+            ${data.nota ? `<p class="small text-secondary">${escapeHtml(data.nota)}</p>` : ''}
+            ${avisos}
+            ${tabela([
+                ['Testadas', data.testadas],
+                ['Abertas', (data.abertas || []).length],
+                ['Fechadas / filtradas', data.fechadas_qtd],
+            ])}
+            <h3 class="h6 text-secondary mt-3">Portas verificadas</h3>
+            ${listaHtml}`;
     }
 
     function renderCmd(elId, data) {
@@ -373,14 +491,24 @@
             el.innerHTML = `<p class="text-danger mb-0">${escapeHtml(data && data.msg ? data.msg : 'Falha')}</p>`;
             return;
         }
-        el.innerHTML = `<p class="small text-secondary mb-2"><code>${escapeHtml(data.comando || '')}</code></p>
+        const aviso = data.aviso
+            ? `<div class="alert alert-warning py-2 small mb-2">${escapeHtml(data.aviso)}</div>`
+            : '';
+        const parcial = data.parcial
+            ? '<span class="badge text-bg-warning ms-1">parcial</span>'
+            : '';
+        el.innerHTML = `<p class="small text-secondary mb-2"><code>${escapeHtml(data.comando || '')}</code>${parcial}</p>
+            ${aviso}
             <pre class="rede-whois-raw mb-0 small">${escapeHtml(data.saida || data.msg || '')}</pre>`;
     }
 
     function renderCerts(data) {
         const el = out('certificados');
         if (!data || !data.ok) {
-            el.innerHTML = `<p class="text-danger mb-0">${escapeHtml(data && data.msg ? data.msg : 'Falha')}</p>`;
+            const link = data && data.link
+                ? ` · <a href="${escapeHtml(data.link)}" target="_blank" rel="noopener">abrir crt.sh</a>`
+                : '';
+            el.innerHTML = `<p class="text-danger mb-0">${escapeHtml(data && data.msg ? data.msg : 'Falha')}${link}</p>`;
             return;
         }
         const rows = (data.itens || []).slice(0, 40).map((i) =>
@@ -415,7 +543,12 @@
     function renderShodan(data) {
         const el = out('shodan');
         if (!data || !data.ok) {
-            el.innerHTML = `<p class="text-danger mb-0">${escapeHtml(data && data.msg ? data.msg : 'Falha')}</p>`;
+            const extra = [];
+            if (data && data.dica) extra.push(`<p class="small text-secondary mb-1">${escapeHtml(data.dica)}</p>`);
+            if (data && data.link) {
+                extra.push(`<a href="${escapeHtml(data.link)}" target="_blank" rel="noopener" class="small">Abrir no Shodan</a>`);
+            }
+            el.innerHTML = `<p class="text-danger mb-2">${escapeHtml(data && data.msg ? data.msg : 'Falha')}</p>${extra.join('')}`;
             return;
         }
         const blocos = (data.resultados || []).map((r) => {
@@ -477,11 +610,37 @@
             ])}`;
     }
 
+    function renderOsint(data) {
+        const el = out('osint');
+        if (!data || !data.ok) {
+            el.innerHTML = `<p class="text-danger mb-0">${escapeHtml(data && data.msg ? data.msg : 'Falha')}</p>`;
+            return;
+        }
+        const ips = (data.ips_resolvidos || []).map(escapeHtml).join(', ');
+        const blocos = (data.grupos || []).map((g) => {
+            const itens = (g.links || []).map((l) => `
+                <tr>
+                    <td class="text-nowrap"><a href="${escapeHtml(l.url)}" target="_blank" rel="noopener">${escapeHtml(l.nome)}</a></td>
+                    <td class="small text-secondary">${escapeHtml(l.pra_que || '')}</td>
+                </tr>`).join('');
+            return `<h3 class="h6 text-secondary mt-3">${escapeHtml(g.titulo)}</h3>
+                <div class="table-responsive"><table class="table table-sm table-dark align-middle mb-0">
+                <thead><tr><th>Link</th><th>Pra que</th></tr></thead>
+                <tbody>${itens}</tbody></table></div>`;
+        }).join('');
+        el.innerHTML = `
+            <p class="small text-secondary mb-2">Alvo: <code>${escapeHtml(data.alvo)}</code>${ips ? ` · IPs: <code>${ips}</code>` : ''}</p>
+            ${data.nota ? `<p class="small text-secondary">${escapeHtml(data.nota)}</p>` : ''}
+            ${(data.avisos || []).map((a) => `<div class="alert alert-warning py-2 small mb-2">${escapeHtml(a)}</div>`).join('')}
+            ${blocos || '<p class="text-secondary mb-0">Sem links</p>'}`;
+    }
+
     const RENDERERS = {
         dns: renderDns,
         whois: renderWhois,
         ip: renderIp,
         http: renderHttp,
+        origem: renderOrigem,
         portas: renderPortas,
         ping: (d) => renderCmd('ping', d),
         traceroute: (d) => renderCmd('traceroute', d),
@@ -490,6 +649,7 @@
         shodan: renderShodan,
         abuseipdb: renderAbuse,
         virustotal: renderVt,
+        osint: renderOsint,
     };
 
     async function rodar(acoes) {
@@ -533,7 +693,7 @@
                 if (idAtual !== consultaId) return;
                 ultimoExport.fontes[acao] = data;
                 if (RENDERERS[acao]) RENDERERS[acao](data);
-                setTabEstado(acao, 'ok');
+                setTabEstado(acao, consultaOk(data) ? 'ok' : 'erro');
             } catch (e) {
                 if (idAtual !== consultaId) return;
                 if (e && (e.name === 'AbortError' || signal.aborted)) return;

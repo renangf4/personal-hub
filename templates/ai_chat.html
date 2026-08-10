@@ -103,6 +103,9 @@
                 </small>
             </div>
             <div class="d-flex gap-2">
+                <button type="button" id="ai-btn-liberar-mem" class="btn btn-sm btn-outline-warning" title="Descarregar modelo da RAM/VRAM do Ollama">
+                    <i class="bi bi-memory"></i><span class="d-none d-md-inline ms-1">Liberar mem.</span>
+                </button>
                 <button id="ai-btn-renomear" class="btn btn-sm btn-outline-secondary d-none" title="Renomear">
                     <i class="bi bi-pencil"></i>
                 </button>
@@ -125,12 +128,14 @@
                 </p>
                 <ul class="small mb-2 ps-3">
                     <li><strong>4k–8k</strong> — perguntas curtas, pouca RAM</li>
-                    <li><strong>16k</strong> — codigo diario com ~8 GB livres</li>
+                    <li><strong>16k</strong> — padrao: codigo diario (bom equilibrio)</li>
                     <li><strong>32k+</strong> — historico longo; sobe o uso de RAM (e VRAM na GPU)</li>
                 </ul>
                 <p class="small text-secondary mb-0">
-                    O seletor marca <strong>sugerido</strong> com base na RAM livre agora.
-                    Se escolher um valor acima, o indicador avisa — pode ficar lento ou travar.
+                    A estimativa combina o <strong>tamanho do modelo</strong> com o contexto.
+                    Com GPU NVIDIA, o hub prioriza a <strong>VRAM livre</strong> (overflow parcial ainda usa RAM).
+                    Sem GPU, usa so a RAM com folga (~1,5 GB). Historico antigo e omitido se nao couber;
+                    use <strong>Parar</strong> pra cancelar uma geracao.
                 </p>
             </div>
         </div>
@@ -152,6 +157,9 @@
                 accept=".pdf,.txt,.md,.json,.csv,.xml,.html,.css,.js,.ts,.tsx,.jsx,.py,.php,.go,.rs,.java,.sql,.yml,.yaml,.toml,.log,.env,.sh,.bat,.ps1,text/*,application/pdf,application/json">
             <button type="button" class="btn btn-outline-secondary" id="ai-btn-anexo" title="Anexar arquivo">
                 <i class="bi bi-paperclip"></i>
+            </button>
+            <button type="button" class="btn btn-danger d-none" id="ai-btn-parar" title="Parar geracao">
+                <i class="bi bi-stop-fill"></i>
             </button>
             <button type="submit" class="btn btn-primary" id="ai-btn-enviar">
                 <i class="bi bi-send"></i>

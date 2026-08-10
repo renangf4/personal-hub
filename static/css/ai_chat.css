@@ -429,6 +429,30 @@ body.page-ai-chat #ai-gate {
     font-variant-numeric: tabular-nums;
 }
 
+.ai-chat__reenviar {
+    margin-top: .55rem;
+    display: flex;
+    flex-wrap: wrap;
+    gap: .4rem;
+}
+
+.ai-chat__reenviar-btn,
+.ai-chat__editar-btn {
+    font-size: .8rem;
+}
+
+.ai-chat__msg-acoes {
+    margin-top: .35rem;
+}
+
+.ai-chat__btn-editar {
+    font-size: .75rem;
+}
+
+#ai-btn-parar {
+    min-width: 2.5rem;
+}
+
 .ai-chat__msg-corpo {
     background: var(--bs-tertiary-bg);
     border: 1px solid var(--bs-border-color);

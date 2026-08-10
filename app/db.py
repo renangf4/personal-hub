@@ -245,6 +245,26 @@ def renomear_chat(chat_id: int, titulo: str) -> bool:
         return cur.rowcount > 0
 
 
+def excluir_mensagens_a_partir(chat_id: int, mensagem_id: int) -> int:
+    """Apaga a mensagem e tudo depois dela no mesmo chat. Retorna quantas apagou."""
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT id FROM ai_mensagens WHERE id = ? AND chat_id = ?",
+            (mensagem_id, chat_id),
+        ).fetchone()
+        if not row:
+            return 0
+        cur = conn.execute(
+            "DELETE FROM ai_mensagens WHERE chat_id = ? AND id >= ?",
+            (chat_id, mensagem_id),
+        )
+        conn.execute(
+            "UPDATE ai_chats SET atualizado_em = datetime('now') WHERE id = ?",
+            (chat_id,),
+        )
+        return int(cur.rowcount or 0)
+
+
 def excluir_chat(chat_id: int) -> None:
     with get_conn() as conn:
         conn.execute("DELETE FROM ai_mensagens WHERE chat_id = ?", (chat_id,))

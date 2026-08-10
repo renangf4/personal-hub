@@ -1,3 +1,4 @@
+import asyncio
 import json
 import shutil
 import time
@@ -698,9 +699,15 @@ def _contexto_permitido(num_ctx) -> int:
 
 
 @app.get("/api/ai/status")
-async def api_ai_status():
+async def api_ai_status(modelo: str | None = None):
     ai = _ai()
-    info = await ai.verificar_status(ai.MODELO_PADRAO)
+    alvo = ai.MODELO_PADRAO
+    if modelo:
+        try:
+            alvo = _modelo_permitido(modelo)
+        except HTTPException:
+            alvo = ai.MODELO_PADRAO
+    info = await ai.verificar_status(alvo)
     return {"ok": True, **info}
 
 
@@ -738,6 +745,16 @@ def api_ai_iniciar_ollama():
     resultado = ai.iniciar_servico_ollama()
     status_code = 200 if resultado.get("ok") else 400
     return JSONResponse(status_code=status_code, content=resultado)
+
+
+@app.post("/api/ai/descarregar")
+async def api_ai_descarregar(payload: dict = Body(default_factory=dict)):
+    """Descarrega modelo(s) da RAM do Ollama (sair do chat, Parar, Liberar mem.)."""
+    ai = _ai()
+    modelo = (payload.get("modelo") or "").strip()
+    if modelo:
+        return await ai.descarregar_modelo(modelo)
+    return await ai.descarregar_todos()
 
 
 @app.get("/api/ai/chats")
@@ -778,6 +795,18 @@ def api_ai_chat_renomear(chat_id: int, payload: dict = Body(...)):
 def api_ai_chat_excluir(chat_id: int):
     db.excluir_chat(chat_id)
     return {"ok": True}
+
+
+@app.delete("/api/ai/chats/{chat_id}/mensagens/{mensagem_id}")
+def api_ai_mensagens_truncar(chat_id: int, mensagem_id: int):
+    """Remove a mensagem e todas as seguintes (pra editar/regerar)."""
+    chat = db.obter_chat(chat_id)
+    if not chat:
+        raise HTTPException(status_code=404, detail="Chat nao encontrado")
+    apagadas = db.excluir_mensagens_a_partir(chat_id, mensagem_id)
+    if not apagadas:
+        raise HTTPException(status_code=404, detail="Mensagem nao encontrada")
+    return {"ok": True, "apagadas": apagadas, "mensagens": db.listar_mensagens(chat_id)}
 
 
 @app.post("/api/ai/chats/{chat_id}/mensagens")
@@ -858,48 +887,85 @@ async def api_ai_mensagem(chat_id: int, request: Request):
         yield (json.dumps({"tipo": "user_msg", "mensagem": msg_user}) + "\n").encode("utf-8")
 
         partes: list[str] = []
-        async for chunk in ai.stream_chat(modelo_ok, historico, num_ctx=num_ctx_ok):
-            if chunk.get("hub") and chunk.get("tipo") == "aviso":
-                yield (json.dumps({
-                    "tipo": "aviso",
-                    "msg": chunk.get("msg"),
-                    "pedido": chunk.get("pedido"),
-                    "usado": chunk.get("usado"),
-                }) + "\n").encode("utf-8")
-                continue
-            if chunk.get("erro"):
-                # Se ja veio texto parcial, salva o que deu pra gerar
-                if chunk.get("parcial") and partes:
-                    parcial = "".join(partes).strip()
-                    if parcial:
-                        db.adicionar_mensagem(chat_id, "assistant", parcial)
+        cancelado = False
+        try:
+            async for chunk in ai.stream_chat(modelo_ok, historico, num_ctx=num_ctx_ok):
+                if await request.is_disconnected():
+                    cancelado = True
+                    break
+                if chunk.get("hub") and chunk.get("tipo") == "aviso":
+                    yield (json.dumps({
+                        "tipo": "aviso",
+                        "msg": chunk.get("msg"),
+                        "pedido": chunk.get("pedido"),
+                        "usado": chunk.get("usado"),
+                    }) + "\n").encode("utf-8")
+                    continue
+                if chunk.get("erro"):
+                    # Se ja veio texto parcial, salva o que deu pra gerar
+                    if chunk.get("parcial") and partes:
+                        parcial = "".join(partes).strip()
+                        if parcial:
+                            db.adicionar_mensagem(chat_id, "assistant", parcial)
+                    yield (
+                        json.dumps({"tipo": "erro", "msg": chunk.get("msg", "Erro desconhecido")}) + "\n"
+                    ).encode("utf-8")
+                    return
+                pedaco = chunk.get("message", {}).get("content", "")
+                if pedaco:
+                    partes.append(pedaco)
+                    yield (json.dumps({"tipo": "delta", "conteudo": pedaco}) + "\n").encode("utf-8")
+                if chunk.get("done"):
+                    resposta = "".join(partes).strip()
+                    total_ns = chunk.get("total_duration") or 0
+                    eval_count = chunk.get("eval_count") or 0
+                    eval_ns = chunk.get("eval_duration") or 0
+                    load_ns = chunk.get("load_duration") or 0
+                    metricas = {
+                        "total_s": round(total_ns / 1e9, 2) if total_ns else None,
+                        "load_s": round(load_ns / 1e9, 2) if load_ns else None,
+                        "tokens": eval_count,
+                        "tokens_por_s": round(eval_count / (eval_ns / 1e9), 1) if eval_ns else None,
+                    }
+                    msg_ai = None
+                    if resposta:
+                        msg_ai = db.adicionar_mensagem(chat_id, "assistant", resposta)
+                    yield (
+                        json.dumps({"tipo": "fim", "mensagem": msg_ai, "metricas": metricas}) + "\n"
+                    ).encode("utf-8")
+                    return
+        except (asyncio.CancelledError, GeneratorExit):
+            cancelado = True
+            parcial = "".join(partes).strip()
+            if parcial:
+                try:
+                    db.adicionar_mensagem(chat_id, "assistant", parcial)
+                except Exception:
+                    pass
+            try:
+                await ai.descarregar_modelo(modelo_ok)
+            except Exception:
+                pass
+            raise
+
+        if cancelado:
+            parcial = "".join(partes).strip()
+            if parcial:
+                try:
+                    db.adicionar_mensagem(chat_id, "assistant", parcial)
+                except Exception:
+                    pass
+            try:
+                await ai.descarregar_modelo(modelo_ok)
+            except Exception:
+                pass
+            # Cliente ja pode ter ido embora — yield e best-effort
+            try:
                 yield (
-                    json.dumps({"tipo": "erro", "msg": chunk.get("msg", "Erro desconhecido")}) + "\n"
+                    json.dumps({"tipo": "parado", "msg": "Geracao interrompida pelo usuario."}) + "\n"
                 ).encode("utf-8")
-                return
-            pedaco = chunk.get("message", {}).get("content", "")
-            if pedaco:
-                partes.append(pedaco)
-                yield (json.dumps({"tipo": "delta", "conteudo": pedaco}) + "\n").encode("utf-8")
-            if chunk.get("done"):
-                resposta = "".join(partes).strip()
-                total_ns = chunk.get("total_duration") or 0
-                eval_count = chunk.get("eval_count") or 0
-                eval_ns = chunk.get("eval_duration") or 0
-                load_ns = chunk.get("load_duration") or 0
-                metricas = {
-                    "total_s": round(total_ns / 1e9, 2) if total_ns else None,
-                    "load_s": round(load_ns / 1e9, 2) if load_ns else None,
-                    "tokens": eval_count,
-                    "tokens_por_s": round(eval_count / (eval_ns / 1e9), 1) if eval_ns else None,
-                }
-                msg_ai = None
-                if resposta:
-                    msg_ai = db.adicionar_mensagem(chat_id, "assistant", resposta)
-                yield (
-                    json.dumps({"tipo": "fim", "mensagem": msg_ai, "metricas": metricas}) + "\n"
-                ).encode("utf-8")
-                return
+            except Exception:
+                pass
 
     return StreamingResponse(gerar(), media_type="application/x-ndjson")
 
@@ -955,61 +1021,61 @@ def _rede_call(fn, *args, **kwargs):
 
 
 @app.post("/api/rede/dns")
-async def api_rede_dns(payload: dict = Body(...)):
+def api_rede_dns(payload: dict = Body(...)):
     rede = _rede()
     return _rede_call(rede.consultar_dns, payload.get("alvo") or "", payload.get("tipos"))
 
 
 @app.post("/api/rede/whois")
-async def api_rede_whois(payload: dict = Body(...)):
+def api_rede_whois(payload: dict = Body(...)):
     rede = _rede()
     return _rede_call(rede.consultar_whois, payload.get("alvo") or "")
 
 
 @app.post("/api/rede/ip")
-async def api_rede_ip(payload: dict = Body(...)):
+def api_rede_ip(payload: dict = Body(...)):
     rede = _rede()
     return _rede_call(rede.consultar_ip, payload.get("alvo") or "")
 
 
 @app.post("/api/rede/http")
-async def api_rede_http(payload: dict = Body(...)):
+def api_rede_http(payload: dict = Body(...)):
     rede = _rede()
     return _rede_call(rede.consultar_http_tls, payload.get("alvo") or "")
 
 
 @app.post("/api/rede/portas")
-async def api_rede_portas(payload: dict = Body(...)):
+def api_rede_portas(payload: dict = Body(...)):
     rede = _rede()
     return _rede_call(rede.consultar_portas, payload.get("alvo") or "")
 
 
 @app.post("/api/rede/ping")
-async def api_rede_ping(payload: dict = Body(...)):
+def api_rede_ping(payload: dict = Body(...)):
     rede = _rede()
     return _rede_call(rede.consultar_ping, payload.get("alvo") or "")
 
 
 @app.post("/api/rede/traceroute")
-async def api_rede_traceroute(payload: dict = Body(...)):
+def api_rede_traceroute(payload: dict = Body(...)):
     rede = _rede()
     return _rede_call(rede.consultar_traceroute, payload.get("alvo") or "")
 
 
 @app.post("/api/rede/certificados")
-async def api_rede_certificados(payload: dict = Body(...)):
+def api_rede_certificados(payload: dict = Body(...)):
     rede = _rede()
     return _rede_call(rede.consultar_certificados, payload.get("alvo") or "")
 
 
 @app.post("/api/rede/rbl")
-async def api_rede_rbl(payload: dict = Body(...)):
+def api_rede_rbl(payload: dict = Body(...)):
     rede = _rede()
     return _rede_call(rede.consultar_rbl, payload.get("alvo") or "")
 
 
 @app.post("/api/rede/shodan")
-async def api_rede_shodan(payload: dict = Body(...)):
+def api_rede_shodan(payload: dict = Body(...)):
     rede = _rede()
     return _rede_call(
         rede.consultar_shodan,
@@ -1019,7 +1085,7 @@ async def api_rede_shodan(payload: dict = Body(...)):
 
 
 @app.post("/api/rede/abuseipdb")
-async def api_rede_abuseipdb(payload: dict = Body(...)):
+def api_rede_abuseipdb(payload: dict = Body(...)):
     rede = _rede()
     return _rede_call(
         rede.consultar_abuseipdb,
@@ -1029,10 +1095,22 @@ async def api_rede_abuseipdb(payload: dict = Body(...)):
 
 
 @app.post("/api/rede/virustotal")
-async def api_rede_virustotal(payload: dict = Body(...)):
+def api_rede_virustotal(payload: dict = Body(...)):
     rede = _rede()
     return _rede_call(
         rede.consultar_virustotal,
         payload.get("alvo") or "",
         db.obter_setting("virustotal_api_key"),
     )
+
+
+@app.post("/api/rede/origem")
+def api_rede_origem(payload: dict = Body(...)):
+    rede = _rede()
+    return _rede_call(rede.consultar_origem, payload.get("alvo") or "")
+
+
+@app.post("/api/rede/osint")
+def api_rede_osint(payload: dict = Body(...)):
+    rede = _rede()
+    return _rede_call(rede.consultar_osint, payload.get("alvo") or "")

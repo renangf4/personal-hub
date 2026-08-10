@@ -10,8 +10,8 @@ Instale sob demanda pela **Loja** (`/loja`):
 - **Imagem** — WebP, PNG, JPEG, GIF, BMP, TIFF; qualidade padrao 90%; estimativa automatica; resultados em card com preview
 - **Screenshot WordPress** — padroniza em 1200x900 PNG comprimido; qualidade padrao 50%; estimativa de tamanho
 - **Desbloquear PDF** — senhas salvas, senha unica, wordlist ou PIN numerico
-- **Assistente de IA Local** — chat com Ollama em tela cheia; anexos; carteiras por foco; contexto sugerido pela RAM livre (com folga pra nao travar o PC)
-- **DNS e Whois** — DNS (incl. SPF/DMARC/CAA), Whois, IP/geo, HTTP/TLS, portas, ping/traceroute, crt.sh, RBL, Shodan / AbuseIPDB / VirusTotal (keys opcionais)
+- **Assistente de IA Local** — chat com Ollama em tela cheia; anexos; editar/regerar; descarregar modelo da RAM; contexto sugerido pela memoria livre
+- **DNS e Whois** — DNS (incl. SPF/DMARC/CAA), Whois, IP/geo, HTTP/TLS, Origem CF, portas, ping/traceroute, crt.sh, RBL, OSINT, Shodan / AbuseIPDB / VirusTotal (keys opcionais)
 - **Criptografar / Descriptografar** — AES-256-GCM no navegador (compativel com [gcm-encrypt-decrypt](https://github.com/renangf4/gcm-encrypt-decrypt))
 - **Cofre de senhas** — arquivo `.hubvault` criptografado no navegador; importar / exportar / excluir; senha-mestra nunca gravada
 - **Dados fake** — gera perfis editaveis (nome, e-mail, CPF...); colecao `.hubfake` criptografada; importar / exportar
@@ -115,5 +115,5 @@ personal-hub/
 - Modo local: so `127.0.0.1`. Modo LAN: rede local com senha — nao exponha na internet.
 - O Assistente de IA exige Ollama rodando localmente; a UI ajuda a instalar e baixar modelos.
 - No Windows, o hub prefere o app de bandeja do Ollama (evita terminais pretos a cada pergunta).
-- O tamanho de contexto e sugerido conforme a RAM livre; a geracao pode ser limitada/interrompida pra preservar folga de memoria.
+- O tamanho de contexto e sugerido conforme a RAM livre; no meio da geracao so interrompe em RAM critica (~150 MB livres) e descarrega o modelo pra liberar memoria.
 - Consultas de rede (Whois/geo/Shodan) usam seu IP publico — a tela avisa qual IP esta saindo.

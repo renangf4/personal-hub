@@ -2,6 +2,7 @@ venv/
 __pycache__/
 *.pyc
 .env
+.vscode/
 
 # Dados locais do hub (DB, uploads, cofres, saidas) — so .gitkeep vai pro git
 storage/**
