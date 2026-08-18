@@ -36,9 +36,21 @@ else
     HUB_BIND="127.0.0.1"
 fi
 
-if [ ! -d "venv" ]; then
-    echo "Criando ambiente virtual..."
-    python3 -m venv venv
+if [ ! -f "venv/bin/activate" ]; then
+    if [ -d "venv" ]; then
+        echo "venv incompatível (ex.: criado no Windows). Recriando..."
+        rm -rf venv
+    else
+        echo "Criando ambiente virtual..."
+    fi
+    if command -v python3 >/dev/null 2>&1; then
+        python3 -m venv venv
+    elif command -v python >/dev/null 2>&1; then
+        python -m venv venv
+    else
+        echo "Python 3 nao encontrado no PATH."
+        exit 1
+    fi
     # shellcheck disable=SC1091
     source venv/bin/activate
     echo "Instalando nucleo..."
@@ -55,12 +67,16 @@ echo
 python -c "from app import config; config.print_banner()"
 echo
 
-if [ "$HUB_MODE" = "local" ]; then
+if [ "$HUB_MODE" = "local" ] && [ "${HUB_OPEN_BROWSER:-1}" != "0" ]; then
     URL="http://localhost:${HUB_PORT}"
     if command -v xdg-open >/dev/null 2>&1; then
         (sleep 1 && xdg-open "$URL") &
     elif command -v open >/dev/null 2>&1; then
         (sleep 1 && open "$URL") &
+    elif command -v explorer.exe >/dev/null 2>&1; then
+        (sleep 1 && explorer.exe "$URL") &
+    elif [ -x /mnt/c/Windows/System32/cmd.exe ]; then
+        (sleep 1 && /mnt/c/Windows/System32/cmd.exe /c start "" "$URL") &
     fi
 fi
 

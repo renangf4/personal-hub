@@ -35,6 +35,8 @@ cd caminho\para\personal-hub
 .\start.bat
 ```
 
+Funciona em disco Windows, pasta de rede UNC e projeto no WSL (`\\wsl.localhost\...`).
+
 1. A primeira execucao cria o `venv` e instala o nucleo.
 2. O navegador abre em `http://localhost:7777`.
 3. Abra **Loja** e instale as ferramentas que quiser.
