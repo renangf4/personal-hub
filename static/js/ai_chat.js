@@ -148,37 +148,51 @@
         let pctRef = 100;
 
         if (vram && vram.disponivel != null && vram.total) {
-            const livreV = formatGb(vram.disponivel);
+            const usadaV = formatGb(vram.usada != null ? vram.usada : (vram.total - vram.disponivel));
             const totalV = formatGb(vram.total);
+            const livreV = formatGb(vram.disponivel);
             pctRef = Math.round((vram.disponivel / vram.total) * 100);
             partes.push(
-                `<i class="bi bi-gpu-card me-1"></i>VRAM: <strong>${livreV}</strong> / ${totalV}`
+                `<i class="bi bi-gpu-card me-1"></i>VRAM: <strong>${usadaV}</strong> / ${totalV}`
             );
             title = (vram.nome ? vram.nome + ' — ' : '') +
-                `VRAM livre ${livreV} de ${totalV}. Ollama usa a GPU quando cabe.`;
+                `${usadaV} em uso de ${totalV} (${livreV} livre p/ modelos).`;
         }
         if (ram && ram.disponivel != null && ram.total) {
-            const livre = formatGb(ram.disponivel);
+            const usada = ram.usada != null ? ram.usada : (ram.total - ram.disponivel);
+            const usadaFmt = formatGb(usada);
             const total = formatGb(ram.total);
+            const livre = formatGb(ram.disponivel);
             const pctRam = Math.round((ram.disponivel / ram.total) * 100);
             if (!modoGpu) pctRef = pctRam;
             partes.push(
                 (partes.length ? ' · ' : '') +
-                `<i class="bi bi-memory me-1"></i>RAM: <strong>${livre}</strong> / ${total}`
+                `<i class="bi bi-memory me-1"></i>RAM: <strong>${usadaFmt}</strong> / ${total}`
             );
             title = (title ? title + ' ' : '') +
-                `RAM livre ${livre} de ${total} (${pctRam}%).`;
+                `RAM: ${usadaFmt} em uso de ${total} (como no monitor). ` +
+                `${livre} disponivel p/ carregar modelos.`;
         }
 
         ramLivreEl.classList.remove('d-none', 'ai-chat__ram--baixa', 'ai-chat__ram--ok', 'ai-chat__ram--aviso');
-        if (excede) {
+        const modeloPesado = ultimoStatus && ultimoStatus.modelo_cabe === false;
+        if (excede || modeloPesado) {
             ramLivreEl.classList.add('ai-chat__ram--aviso');
+            const avisoCtx = excede
+                ? '· contexto pode passar'
+                : '· modelo pesado p/ o servidor';
             ramLivreEl.innerHTML =
                 partes.join('') +
-                ` <span class="ai-chat__ram-aviso">· contexto pode passar</span>`;
+                ` <span class="ai-chat__ram-aviso">${avisoCtx}</span>`;
             const est = atual && atual.ram_gb != null ? `~${atual.ram_gb} GB` : '?';
+            const peso = ultimoStatus && ultimoStatus.modelo_ram_estimada_gb != null
+                ? `~${ultimoStatus.modelo_ram_estimada_gb} GB`
+                : est;
             ramLivreEl.title =
-                `Contexto selecionado estima ${est}. ${title} Pode ficar lento ou usar overflow CPU/RAM.`;
+                (modeloPesado
+                    ? `Modelo selecionado estima ${peso} no servidor. `
+                    : `Contexto selecionado estima ${est}. `) + title +
+                (modeloPesado ? ' Escolha um modelo menor.' : ' Pode ficar lento ou usar overflow CPU/RAM.');
         } else {
             ramLivreEl.classList.add(pctRef < 20 ? 'ai-chat__ram--baixa' : 'ai-chat__ram--ok');
             ramLivreEl.innerHTML = partes.join('');
@@ -917,7 +931,7 @@
                     </div>`;
             }
             atualizarBotoesEditar();
-            oferecerReenvioSePendente(msgs);
+            oferecerReenvioSePendente(data.mensagens || []);
             renderListaChatsAtiva();
             input.focus();
         } catch (err) {
@@ -1396,6 +1410,10 @@
                     if (data.contextos) ultimoStatus.contextos = data.contextos;
                     if (data.ram_folga_bytes) ultimoStatus.ram_folga_bytes = data.ram_folga_bytes;
                     if (data.vram_folga_bytes) ultimoStatus.vram_folga_bytes = data.vram_folga_bytes;
+                    if (typeof data.modelo_cabe === 'boolean') ultimoStatus.modelo_cabe = data.modelo_cabe;
+                    if (data.modelo_ram_estimada_gb != null) {
+                        ultimoStatus.modelo_ram_estimada_gb = data.modelo_ram_estimada_gb;
+                    }
                     if (data.pull) ultimoStatus.pull = data.pull;
                 }
                 if (data.pull && data.pull.ativo) {

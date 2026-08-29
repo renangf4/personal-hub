@@ -283,33 +283,25 @@ def _inferir_gb_do_nome(modelo: str) -> float | None:
     return round(max(0.8, params_b * 0.67), 1)
 
 
-def _ajustar_gb_ram(disk_gb: float, modelo: str) -> float:
-    """Preset/disco as vezes e download bruto; RAM carregada costuma ser bem menor."""
-    inferido = _inferir_gb_do_nome(modelo)
-    if inferido and disk_gb > inferido * 1.35:
-        return inferido
-    return disk_gb
-
-
 def _tamanho_modelo_gb(modelo: str, tamanhos: dict[str, float] | None = None) -> float:
-    """Estima GB em RAM ao carregar (Ollama tags, preset ajustado ou nome do modelo)."""
+    """Estima GB em RAM ao carregar (tamanho real do Ollama ou preset)."""
     nome = (modelo or "").strip()
     low = nome.lower()
     if tamanhos:
         if nome in tamanhos:
-            return _ajustar_gb_ram(tamanhos[nome], nome)
+            return tamanhos[nome]
         for k, v in tamanhos.items():
             kl = k.lower()
             if kl == low or kl.startswith(low + ":") or low.startswith(kl.split(":")[0]):
-                return _ajustar_gb_ram(v, nome)
+                return v
             if low.startswith(kl.rsplit(":", 1)[0] + ":") or kl.startswith(low.rsplit(":", 1)[0] + ":"):
-                return _ajustar_gb_ram(v, nome)
+                return v
     for preset in MODELOS_PRESET:
         slug = preset["slug"].lower()
         if low == slug or low.startswith(slug + ":") or slug in low:
             gb = _parse_tamanho_gb(preset.get("tamanho"))
             if gb:
-                return _ajustar_gb_ram(gb, nome)
+                return gb
     inferido = _inferir_gb_do_nome(nome)
     if inferido:
         return inferido
@@ -522,9 +514,9 @@ def limitar_contexto(
         return None, {
             "erro": True,
             "msg": (
-                f"Contexto minimo (4k) estima ~{need_gb:.1f} GB + folga ~{folga_gb:.1f} GB{ja}, "
-                f"mas o servidor so tem {onde}. "
-                "Escolha um modelo mais leve ou feche outros programas na maquina do hub."
+                f"O modelo `{modelo}` precisa de ~{need_gb:.1f} GB livres no servidor "
+                f"(folga ~{folga_gb:.1f} GB){ja}, mas so ha {onde}. "
+                "Troque para um modelo menor (ex.: qwen2.5-coder:3b)."
             ),
         }
 
@@ -873,8 +865,8 @@ MODELOS_PRESET = [
     {
         "slug": "DeepHat/DeepHat-V1-7B",
         "nome": "DeepHat",
-        "descricao": "Cybersecurity / red team (deephat.ai). Nao censurado.",
-        "tamanho": "~4.7 GB",
+        "descricao": "Cybersecurity / red team. Pesado (~14 GB) — servidor com 16 GB+ RAM.",
+        "tamanho": "~14 GB",
         "icone": "bi-shield-lock",
         "foco": "seguranca",
     },
@@ -1094,7 +1086,7 @@ async def obter_tamanhos_ollama() -> dict[str, float]:
                 nome = m.get("name", "")
                 size = m.get("size")
                 if nome and isinstance(size, (int, float)) and size > 0:
-                    tamanhos[nome] = _ajustar_gb_ram(size / (1024 ** 3), nome)
+                    tamanhos[nome] = size / (1024 ** 3)
     except Exception:
         pass
     return tamanhos
@@ -1155,6 +1147,9 @@ async def verificar_status(modelo: str = MODELO_PADRAO) -> dict:
     info["ram_folga_bytes"] = _ram_folga_bytes(info["ram"])
     info["vram_folga_bytes"] = VRAM_FOLGA_BYTES
     info["modelo_tamanho_gb"] = round(_tamanho_modelo_gb(modelo, tamanhos), 1)
+    need_modelo = estimar_need_bytes(modelo, CONTEXTOS[0]["tokens"], tamanhos, carregado)
+    info["modelo_ram_estimada_gb"] = round(need_modelo / (1024 ** 3), 1)
+    info["modelo_cabe"] = memoria_suficiente(need_modelo, info["ram"], info["vram"])
     info["contextos"] = _contextos_com_estimativa(
         modelo, tamanhos, info["ram"], info["vram"], carregado
     )
