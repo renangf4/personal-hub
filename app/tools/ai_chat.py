@@ -1,5 +1,6 @@
 import asyncio
 import json
+import math
 import os
 import platform
 import re
@@ -274,6 +275,145 @@ def _parse_tamanho_gb(texto: str | None) -> float | None:
     return float(m.group(1).replace(",", "."))
 
 
+def _params_b_do_modelo(modelo: str, preset: dict | None = None) -> float | None:
+    if preset and preset.get("parametros"):
+        m = re.search(r"([\d.]+)\s*B", str(preset["parametros"]), re.I)
+        if m:
+            return float(m.group(1))
+    m = re.search(r"v?(\d+(?:\.\d+)?)\s*b", (modelo or "").lower())
+    if m:
+        return float(m.group(1))
+    return None
+
+
+def _preset_do_modelo(modelo: str) -> dict | None:
+    low = (modelo or "").strip().lower()
+    for preset in MODELOS_PRESET:
+        slug = preset["slug"].lower()
+        if low == slug or low.startswith(slug + ":") or slug in low:
+            return preset
+    return None
+
+
+def _inferir_quant_label(tamanho_gb: float, params_b: float | None) -> str:
+    """Infere Q4/Q8/FP16 pelo tamanho em disco vs bilhoes de parametros."""
+    if not params_b or params_b <= 0 or tamanho_gb <= 0:
+        return ""
+    gpb = tamanho_gb / params_b
+    if gpb <= 0.62:
+        return "Q4"
+    if gpb <= 0.85:
+        return "Q5"
+    if gpb <= 1.05:
+        return "Q8"
+    if gpb <= 1.45:
+        return "Q6_K"
+    return "FP16+"
+
+
+def _kv_cache_gb(params_b: float, num_ctx: int, quant_label: str = "") -> float:
+    """KV cache: ~2 GB para 7B @ 4k FP16; escala por params, contexto e quant."""
+    fatores = {"Q4": 0.45, "Q5": 0.55, "Q6_K": 0.65, "Q8": 0.75, "FP16+": 1.0}
+    fator = fatores.get(quant_label, 0.7)
+    ctx = max(512, int(num_ctx or 4096))
+    return 2.0 * (params_b / 7.0) * (ctx / 4096.0) * fator
+
+
+def _overhead_gb(pesos_gb: float) -> float:
+    if pesos_gb < 5:
+        return 1.2
+    if pesos_gb < 9:
+        return 2.0
+    return 2.5
+
+
+def _ram_total_gb(
+    pesos_gb: float,
+    params_b: float | None,
+    num_ctx: int = 4096,
+    quant_label: str = "",
+) -> float:
+    """Pesos (arquivo) + KV cache + margem SO/Ollama — contexto 4k por padrao."""
+    pb = params_b if params_b and params_b > 0 else 7.0
+    kv = _kv_cache_gb(pb, num_ctx, quant_label)
+    return max(1.0, pesos_gb + kv + _overhead_gb(pesos_gb))
+
+
+def _ram_nota_leiga(ram_gb: float) -> str:
+    r = int(math.ceil(ram_gb))
+    if r <= 6:
+        return "Notebooks e PCs modestos"
+    if r <= 9:
+        return "PC com 8 GB ou mais"
+    if r <= 12:
+        return "PC com 16 GB recomendado"
+    return "Maquina robusta (16 GB ou mais)"
+
+
+def _ram_detalhe_tecnico(
+    pesos_gb: float,
+    params_b: float | None,
+    num_ctx: int,
+    quant_label: str,
+) -> str:
+    pb = params_b if params_b and params_b > 0 else 7.0
+    kv = _kv_cache_gb(pb, num_ctx, quant_label)
+    ov = _overhead_gb(pesos_gb)
+    q = f" · {quant_label}" if quant_label else ""
+    ctx_k = num_ctx // 1024 if num_ctx >= 1024 else num_ctx
+    ctx_txt = f"{ctx_k}k" if num_ctx >= 1024 else str(num_ctx)
+    return (
+        f"Pesos ~{pesos_gb:.1f} GB{q} + contexto {ctx_txt} (~{kv:.1f} GB) "
+        f"+ margem do sistema (~{ov:.1f} GB)."
+    )
+
+
+def _enriquecer_preset(preset: dict, tamanhos: dict[str, float] | None) -> dict:
+    """Calcula RAM/quant para UI leiga + detalhes tecnicos sob demanda."""
+    slug = preset["slug"]
+    tamanhos = tamanhos or {}
+    params_b = _params_b_do_modelo(slug, preset)
+    tamanho_gb = _tamanho_modelo_gb(slug, tamanhos)
+    baixado = bool(preset.get("baixado"))
+    ctx_ref = CONTEXTOS[0]["tokens"]
+
+    out = {**preset}
+    out["tamanho_real_gb"] = round(tamanho_gb, 1) if baixado else None
+
+    if baixado and tamanho_gb > 0:
+        quant = _inferir_quant_label(tamanho_gb, params_b)
+        total = _ram_total_gb(tamanho_gb, params_b, ctx_ref, quant)
+        out["quant_label"] = quant
+        out["ram_estimada_gb"] = round(total, 1)
+        out["ram_minima_gb"] = int(math.ceil(total))
+        out["ram_nota"] = _ram_nota_leiga(total)
+        out["ram_detalhe"] = _ram_detalhe_tecnico(tamanho_gb, params_b, ctx_ref, quant)
+        return out
+
+    # Ainda nao baixado — faixa tipica Q4 a FP16
+    if params_b:
+        peso_q4 = round(params_b * 0.55, 1)
+        peso_fp = round(params_b * 2.0, 1)
+        ram_min = int(math.ceil(_ram_total_gb(peso_q4, params_b, ctx_ref, "Q4")))
+        ram_max = int(math.ceil(_ram_total_gb(peso_fp, params_b, ctx_ref, "FP16+")))
+        out["ram_minima_gb"] = ram_min
+        out["ram_maxima_gb"] = ram_max
+        out["ram_nota"] = f"De ~{ram_min} GB (compacto) a ~{ram_max} GB (completo)"
+        out["ram_detalhe"] = (
+            f"Depende da versao que o Ollama baixar. Estimativa: compacta (Q4) "
+            f"~{peso_q4} GB no disco; completa (FP16) ~{peso_fp} GB. "
+            f"Calculo: pesos + contexto 4k + margem do sistema."
+        )
+        return out
+
+    tamanho_preset = _parse_tamanho_gb(preset.get("tamanho")) or tamanho_gb
+    total = _ram_total_gb(tamanho_preset, params_b, ctx_ref, "")
+    out["ram_minima_gb"] = int(math.ceil(total))
+    out["ram_nota"] = _ram_nota_leiga(total)
+    out["ram_detalhe"] = _ram_detalhe_tecnico(tamanho_preset, params_b, ctx_ref, "")
+    return out
+
+
 def _inferir_gb_do_nome(modelo: str) -> float | None:
     """Heuristica Q4: ~0,67 GB por bilhao de parametros (7B -> ~4,7 GB)."""
     m = re.search(r"v?(\d+(?:\.\d+)?)\s*b", (modelo or "").lower())
@@ -314,27 +454,30 @@ def estimar_need_bytes(
     tamanhos: dict[str, float] | None = None,
     carregado: dict | None = None,
 ) -> int:
-    """Bytes necessarios agora: carga completa ou custo marginal se ja residente no Ollama."""
+    """Bytes necessarios: pesos + KV + margem (ou custo marginal se ja carregado)."""
+    preset = _preset_do_modelo(modelo)
+    params_b = _params_b_do_modelo(modelo, preset)
+
     if carregado and int(carregado.get("size") or 0) > 0:
         modelo_gb = int(carregado["size"]) / (1024 ** 3)
     else:
         modelo_gb = _tamanho_modelo_gb(modelo, tamanhos)
+
     ctx = max(512, int(num_ctx or CONTEXT_PADRAO))
-    kv = (ctx / 4096.0) * modelo_gb * 0.18
+    quant = _inferir_quant_label(modelo_gb, params_b)
 
     if carregado and int(carregado.get("size") or 0) > 0:
         ctx_atual = max(512, int(carregado.get("context_length") or 4096))
-        kv_atual = (ctx_atual / 4096.0) * modelo_gb * 0.18
+        need_atual = _ram_total_gb(modelo_gb, params_b, ctx_atual, quant)
+        need_novo = _ram_total_gb(modelo_gb, params_b, ctx, quant)
         if ctx <= ctx_atual:
-            marginal_gb = max(0.3, modelo_gb * 0.08)
+            marginal_gb = max(0.3, modelo_gb * 0.06)
         else:
-            marginal_gb = max(0.35, (kv - kv_atual) + 0.25)
+            marginal_gb = max(0.35, need_novo - need_atual + 0.2)
         return int(marginal_gb * (1024 ** 3))
 
-    # Pesos ~tamanho Q4; KV cresce com contexto mas nao linearmente como antes.
-    pesos = modelo_gb * 0.95
-    kv = (ctx / 4096.0) * modelo_gb * 0.18
-    return int(max(1.0, pesos + kv) * (1024 ** 3))
+    total_gb = _ram_total_gb(modelo_gb, params_b, ctx, quant)
+    return int(total_gb * (1024 ** 3))
 
 
 def estimar_ram_gb(
@@ -819,7 +962,6 @@ MODELOS_PRESET = [
         "slug": "qwen2.5-coder:1.5b",
         "nome": "Qwen Coder",
         "parametros": "1.5B",
-        "ram_minima_gb": 4,
         "descricao": (
             "Agente ultraleve para autocomplete, corrigir sintaxe e tirar duvidas "
             "pontuais sem travar o PC."
@@ -832,7 +974,6 @@ MODELOS_PRESET = [
         "slug": "starcoder2:3b",
         "nome": "StarCoder2",
         "parametros": "3B",
-        "ram_minima_gb": 6,
         "descricao": (
             "Treinado em repositorios reais (BigCode). Bom para varias linguagens, "
             "boilerplate e scripts curtos."
@@ -845,7 +986,6 @@ MODELOS_PRESET = [
         "slug": "codegemma:2b",
         "nome": "CodeGemma",
         "parametros": "2B",
-        "ram_minima_gb": 4,
         "descricao": (
             "Google focado em codigo. Responde rapido em notebooks e ajuda com "
             "funcoes pequenas e explicacoes de trecho."
@@ -859,7 +999,6 @@ MODELOS_PRESET = [
         "slug": "qwen2.5-coder:3b",
         "nome": "Qwen Coder",
         "parametros": "3B",
-        "ram_minima_gb": 6,
         "descricao": (
             "Padrao do hub. Explica logica, refatora funcoes, sugere testes e revisa "
             "trechos em Python, JS, SQL, shell e configs."
@@ -872,7 +1011,6 @@ MODELOS_PRESET = [
         "slug": "qwen2.5-coder:7b",
         "nome": "Qwen Coder",
         "parametros": "7B",
-        "ram_minima_gb": 8,
         "descricao": (
             "Mais contexto e precisao em debug, arquitetura leve e documentacao "
             "tecnica. Indicado com 8 GB+ de RAM."
@@ -885,7 +1023,6 @@ MODELOS_PRESET = [
         "slug": "deepseek-coder:6.7b",
         "nome": "DeepSeek Coder",
         "parametros": "6.7B",
-        "ram_minima_gb": 8,
         "descricao": (
             "Forte em Python e JavaScript: refatoracao, APIs, tipos e raciocinio "
             "passo a passo em problemas de codigo."
@@ -898,7 +1035,6 @@ MODELOS_PRESET = [
         "slug": "codellama:7b",
         "nome": "Code Llama",
         "parametros": "7B",
-        "ram_minima_gb": 8,
         "descricao": (
             "Classico da Meta para programacao. Bom em C/C++, Python e completar "
             "funcoes com estilo consistente."
@@ -911,7 +1047,6 @@ MODELOS_PRESET = [
         "slug": "starcoder2:7b",
         "nome": "StarCoder2",
         "parametros": "7B",
-        "ram_minima_gb": 8,
         "descricao": (
             "Versao maior para repos extensos, multi-arquivo e padroes de projeto "
             "em varias linguagens."
@@ -924,7 +1059,6 @@ MODELOS_PRESET = [
         "slug": "codegemma:7b",
         "nome": "CodeGemma",
         "parametros": "7B",
-        "ram_minima_gb": 8,
         "descricao": (
             "Segue instrucoes complexas, gera modulos inteiros e ajuda a manter "
             "codigo legivel e bem estruturado."
@@ -938,10 +1072,9 @@ MODELOS_PRESET = [
         "slug": "DeepHat/DeepHat-V1-7B",
         "nome": "DeepHat",
         "parametros": "7B",
-        "ram_minima_gb": 16,
         "descricao": (
             "Agente de cybersecurity e red team: analise ofensiva, payloads, "
-            "recon, exploit chains e hardening. Modelo grande — precisa de maquina robusta."
+            "recon, exploit chains e hardening."
         ),
         "tamanho": "~14 GB",
         "icone": "bi-shield-lock",
@@ -952,7 +1085,6 @@ MODELOS_PRESET = [
         "slug": "deepseek-coder-v2:16b",
         "nome": "DeepSeek Coder V2",
         "parametros": "16B",
-        "ram_minima_gb": 16,
         "descricao": (
             "Para codebases grandes, migracoes e varios arquivos abertos. "
             "Entende dependencias cruzadas e refatoracoes amplas."
@@ -965,7 +1097,6 @@ MODELOS_PRESET = [
         "slug": "qwen2.5-coder:14b",
         "nome": "Qwen Coder",
         "parametros": "14B",
-        "ram_minima_gb": 16,
         "descricao": (
             "Maxima qualidade em codigo: design de sistemas, reviews profundos "
             "e geracao longa com poucos erros."
@@ -1147,6 +1278,8 @@ async def verificar_status(modelo: str = MODELO_PADRAO) -> dict:
         info["msg"] = "Ollama nao esta rodando em localhost:11434"
     except Exception as e:
         info["msg"] = f"Erro ao consultar Ollama: {e}"
+
+    info["presets"] = [_enriquecer_preset(p, tamanhos) for p in info["presets"]]
 
     info["ram"] = obter_ram()
     info["vram"] = obter_vram()

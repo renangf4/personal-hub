@@ -324,8 +324,12 @@
 
     function presetCabeNoServidor(p) {
         const total = ramTotalServidorGb();
-        if (total == null || !p.ram_minima_gb) return true;
-        return total >= p.ram_minima_gb - 0.5;
+        if (total == null) return true;
+        const need = p.baixado && p.ram_estimada_gb != null
+            ? p.ram_estimada_gb
+            : p.ram_minima_gb;
+        if (!need) return true;
+        return total >= need - 0.5;
     }
 
     function rotuloPreset(p) {
@@ -336,30 +340,54 @@
     function htmlSpecsPreset(p) {
         const cabe = presetCabeNoServidor(p);
         const rows = [];
+        if (p.ram_nota) {
+            rows.push(`<div class="ai-preset__spec">
+                <span class="ai-preset__spec-label">Indicado para</span>
+                <span class="ai-preset__spec-val${cabe ? '' : ' ai-preset__spec-val--alerta'}">${escapeHtml(p.ram_nota)}</span>
+            </div>`);
+        } else if (p.ram_minima_gb) {
+            rows.push(`<div class="ai-preset__spec">
+                <span class="ai-preset__spec-label">RAM minima</span>
+                <span class="ai-preset__spec-val${cabe ? '' : ' ai-preset__spec-val--alerta'}">~${p.ram_minima_gb} GB</span>
+            </div>`);
+        }
         if (p.parametros) {
             rows.push(`<div class="ai-preset__spec">
                 <span class="ai-preset__spec-label">Parametros</span>
                 <span class="ai-preset__spec-val">${escapeHtml(p.parametros)}</span>
             </div>`);
         }
-        if (p.ram_minima_gb) {
-            const alerta = cabe ? '' : ' ai-preset__spec-val--alerta';
-            rows.push(`<div class="ai-preset__spec">
-                <span class="ai-preset__spec-label">RAM minima</span>
-                <span class="ai-preset__spec-val${alerta}">~${p.ram_minima_gb} GB</span>
-            </div>`);
-        }
-        if (p.tamanho) {
+        const download = p.tamanho_real_gb != null
+            ? `~${p.tamanho_real_gb} GB`
+            : (p.tamanho || '');
+        if (download) {
             rows.push(`<div class="ai-preset__spec">
                 <span class="ai-preset__spec-label">Download</span>
-                <span class="ai-preset__spec-val">${escapeHtml(p.tamanho)}</span>
+                <span class="ai-preset__spec-val">${escapeHtml(download)}</span>
             </div>`);
         }
         const aviso = cabe ? '' : (
             '<div class="ai-preset__spec-aviso">' +
-            '<i class="bi bi-exclamation-triangle me-1"></i>Acima da RAM desta maquina</div>'
+            '<i class="bi bi-exclamation-triangle me-1"></i>Pode nao caber nesta maquina</div>'
         );
-        return `<div class="ai-preset__specs">${rows.join('')}${aviso}</div>`;
+        let detalhes = '';
+        if (p.ram_detalhe || p.quant_label) {
+            const partes = [];
+            if (p.quant_label) {
+                partes.push(`<div><strong>Versao:</strong> ${escapeHtml(p.quant_label)}</div>`);
+            }
+            if (p.ram_estimada_gb != null) {
+                partes.push(`<div><strong>Uso estimado:</strong> ~${p.ram_estimada_gb} GB (contexto 4k)</div>`);
+            }
+            if (p.ram_detalhe) {
+                partes.push(`<div class="mt-1">${escapeHtml(p.ram_detalhe)}</div>`);
+            }
+            detalhes = `<details class="ai-preset__detalhes">
+                <summary>Mais detalhes tecnicos</summary>
+                <div class="ai-preset__detalhes-corpo">${partes.join('')}</div>
+            </details>`;
+        }
+        return `<div class="ai-preset__specs">${rows.join('')}${aviso}${detalhes}</div>`;
     }
 
     function renderPresets(presets, gerenciar) {

@@ -428,6 +428,29 @@ body.page-ai-chat #ai-gate {
     border-color: rgba(var(--bs-warning-rgb), .45);
 }
 
+.ai-preset__detalhes {
+    margin-top: .35rem;
+    font-size: .72rem;
+    color: var(--bs-secondary-color);
+}
+
+.ai-preset__detalhes summary {
+    cursor: pointer;
+    color: var(--bs-secondary-color);
+    user-select: none;
+}
+
+.ai-preset__detalhes summary:hover {
+    color: var(--bs-body-color);
+}
+
+.ai-preset__detalhes-corpo {
+    margin-top: .4rem;
+    padding-top: .35rem;
+    border-top: 1px dashed var(--bs-border-color);
+    line-height: 1.45;
+}
+
 .ai-preset__slug {
     font-family: monospace;
     font-size: .7rem;
