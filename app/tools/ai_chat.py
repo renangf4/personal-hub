@@ -1158,6 +1158,89 @@ def corrigir_modo_console_windows() -> dict | None:
         return {"ok": False, "msg": str(e)}
 
 
+async def _iter_aguardar_ollama(enviar) -> AsyncIterator[bytes]:
+    """Poll ate Ollama responder em localhost:11434."""
+    for _ in range(120):
+        await asyncio.sleep(2)
+        exe = detectar_ollama_instalado()
+        if exe and not _ollama_ja_responde():
+            iniciar_servico_ollama()
+        if not exe:
+            yield enviar({
+                "etapa": "instalando",
+                "status": "Aguardando instalacao...",
+            })
+            continue
+        try:
+            async with httpx.AsyncClient(timeout=2.0) as client:
+                r = await client.get(f"{OLLAMA_BASE_URL}/api/tags")
+                if r.status_code == 200:
+                    yield enviar({
+                        "etapa": "concluido",
+                        "status": "Ollama instalado e em execucao.",
+                        "exe": exe,
+                    })
+                    return
+        except Exception:
+            pass
+        yield enviar({
+            "etapa": "instalando",
+            "status": "Aguardando Ollama em localhost:11434...",
+            "exe": exe,
+        })
+    yield enviar({
+        "erro": True,
+        "status": "Tempo esgotado aguardando o Ollama.",
+        "detalhe": "curl -fsSL https://ollama.com/install.sh | sh",
+    })
+
+
+async def _stream_install_linux(enviar) -> AsyncIterator[bytes]:
+    yield enviar({
+        "etapa": "instalando",
+        "status": "Baixando e instalando Ollama no servidor...",
+    })
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "bash",
+            "-c",
+            "curl -fsSL https://ollama.com/install.sh | sh",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+        )
+    except OSError as e:
+        yield enviar({"erro": True, "status": f"Nao foi possivel iniciar instalacao: {e}"})
+        return
+
+    saida_final = ""
+    if proc.stdout:
+        while True:
+            linha = await proc.stdout.readline()
+            if not linha:
+                break
+            texto = linha.decode("utf-8", errors="replace").rstrip()
+            if texto:
+                saida_final = texto
+                yield enviar({"etapa": "instalando", "status": texto})
+
+    codigo = await proc.wait()
+    if codigo != 0:
+        yield enviar({
+            "erro": True,
+            "status": f"Instalacao falhou (codigo {codigo}).",
+            "detalhe": (
+                saida_final
+                or "No terminal do servidor: curl -fsSL https://ollama.com/install.sh | sh"
+            ),
+        })
+        return
+
+    yield enviar({"etapa": "instalando", "status": "Iniciando servico Ollama..."})
+    iniciar_servico_ollama()
+    async for chunk in _iter_aguardar_ollama(enviar):
+        yield chunk
+
+
 async def stream_install_ollama() -> AsyncIterator[bytes]:
     """Baixa e dispara o instalador do Ollama, retransmitindo progresso em ndjson."""
 
@@ -1171,11 +1254,8 @@ async def stream_install_ollama() -> AsyncIterator[bytes]:
         return
 
     if sistema == "Linux":
-        yield enviar({
-            "erro": True,
-            "status": "Instalacao automatica nao suportada no Linux por este app.",
-            "detalhe": "Rode no terminal: curl -fsSL https://ollama.com/install.sh | sh",
-        })
+        async for chunk in _stream_install_linux(enviar):
+            yield chunk
         return
 
     if sistema == "Darwin":
@@ -1239,33 +1319,8 @@ async def stream_install_ollama() -> AsyncIterator[bytes]:
             yield enviar({"erro": True, "status": f"Falha ao abrir instalador: {e}"})
             return
 
-        for _ in range(180):
-            await asyncio.sleep(2)
-            exe = detectar_ollama_instalado()
-            if not exe:
-                continue
-            try:
-                async with httpx.AsyncClient(timeout=2.0) as client:
-                    r = await client.get(f"{OLLAMA_BASE_URL}/api/tags")
-                    if r.status_code == 200:
-                        yield enviar({
-                            "etapa": "concluido",
-                            "status": "Ollama instalado e em execucao.",
-                            "exe": exe,
-                        })
-                        return
-            except Exception:
-                pass
-            yield enviar({
-                "etapa": "instalando",
-                "status": "Instalador aberto. Aguardando conclusao...",
-                "exe": exe,
-            })
-
-        yield enviar({
-            "erro": True,
-            "status": "Tempo esgotado aguardando instalacao. Tente novamente apos concluir o instalador.",
-        })
+        async for chunk in _iter_aguardar_ollama(enviar):
+            yield chunk
     except httpx.ConnectError:
         yield enviar({"erro": True, "status": "Sem conexao com a internet para baixar o instalador."})
     except Exception as e:

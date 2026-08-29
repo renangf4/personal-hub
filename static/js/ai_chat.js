@@ -206,6 +206,12 @@
                              Clique para baixar e instalar automaticamente.`,
                             { instalar: true }
                         );
+                    } else if (data.sistema === 'Linux') {
+                        mostrarGate('Ollama nao instalado',
+                            `Sera instalado no <strong>servidor</strong> onde o hub roda (nao no seu PC).<br>
+                             Clique para instalar automaticamente.`,
+                            { instalar: true }
+                        );
                     } else if (data.sistema === 'Darwin') {
                         mostrarGate('Ollama nao instalado',
                             `Baixe em
@@ -658,7 +664,9 @@
                         pullBar.style.width = '100%';
                         pullPercent.textContent = '';
                         pullStatus.textContent = ev.status || 'Instalando...';
-                        pullDetalhe.textContent = 'Acompanhe o instalador do Ollama na sua tela.';
+                        pullDetalhe.textContent = (ultimoStatus && ultimoStatus.sistema === 'Linux')
+                            ? 'Instalando no servidor do hub. Pode levar alguns minutos.'
+                            : 'Acompanhe o instalador do Ollama na sua tela.';
                     } else if (ev.etapa === 'concluido') {
                         pullStatus.textContent = ev.status || 'Instalado!';
                         pullDetalhe.textContent = '';
