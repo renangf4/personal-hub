@@ -64,9 +64,13 @@ O terminal lista os IPs (use o `192.168.x.x`, nao o `172.x` virtual). No celular
 ### Linux / macOS
 
 ```bash
-chmod +x start.sh
+chmod +x start.sh   # so se ./start.sh der "Permissao negada" apos git clone
 ./start.sh
 ```
+
+Alternativa sem `chmod`: `bash start.sh lan sua-senha`
+
+**Nao use `sudo`** pra subir o hub — so precisa de sudo pro firewall (`ufw allow 7777/tcp`), nao pro `start.sh`. Com sudo o `python3` costuma sumir do PATH.
 
 Na primeira execucao o script cria o `venv` e instala o nucleo. Em Ubuntu/Debian, se falhar:
 
