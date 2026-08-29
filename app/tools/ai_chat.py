@@ -26,6 +26,16 @@ VRAM_FOLGA_BYTES = int(0.5 * 1024 * 1024 * 1024)
 # Reserva de tokens pra resposta do modelo dentro do num_ctx.
 CTX_RESERVA_RESPOSTA = 0.22
 
+
+def _ram_folga_bytes(ram: dict | None) -> int:
+    """Folga proporcional ao total — 1,5 GB fixo era pesado demais em PCs de 8 GB."""
+    if not ram or not ram.get("total"):
+        return RAM_FOLGA_BYTES
+    total = int(ram["total"])
+    pct = int(total * 0.10)
+    minimo = int(0.5 * 1024 ** 3)
+    return min(RAM_FOLGA_BYTES, max(minimo, pct))
+
 _pull_lock = asyncio.Lock()
 _pull_task: asyncio.Task | None = None
 _pull_state: dict = {
@@ -166,9 +176,11 @@ def memoria_suficiente(
     need_bytes: int,
     ram: dict | None,
     vram: dict | None,
+    folga_ram: int | None = None,
 ) -> bool:
     """True se a estimativa cabe: preferindo VRAM, com overflow parcial na RAM."""
     need = max(0, int(need_bytes))
+    folga = folga_ram if folga_ram is not None else _ram_folga_bytes(ram)
     if vram and vram.get("disponivel", 0) > 0:
         gpu_cap = max(0, int(vram["disponivel"]) - VRAM_FOLGA_BYTES)
         on_gpu = min(need, gpu_cap)
@@ -180,11 +192,11 @@ def memoria_suficiente(
             return int(ram["disponivel"]) >= RAM_FOLGA_COM_GPU_BYTES
         if not ram or not ram.get("disponivel"):
             return False
-        return int(ram["disponivel"]) - on_ram >= RAM_FOLGA_BYTES
+        return int(ram["disponivel"]) - on_ram >= folga
 
     if not ram or not ram.get("disponivel"):
         return False
-    return int(ram["disponivel"]) - need >= RAM_FOLGA_BYTES
+    return int(ram["disponivel"]) - need >= folga
 
 
 def _modo_memoria(vram: dict | None) -> str:
@@ -283,18 +295,41 @@ def _tamanho_modelo_gb(modelo: str, tamanhos: dict[str, float] | None = None) ->
     return 4.7
 
 
-def estimar_ram_gb(modelo: str, num_ctx: int, tamanhos: dict[str, float] | None = None) -> float:
-    """Heuristica: pesos do modelo + KV cache proporcional ao contexto.
-
-    Nao e exato (arquitetura/quantizacao variam), mas acompanha o que se ve
-    no `ollama ps` bem melhor que uma tabela fixa so por num_ctx.
-    """
+def estimar_need_bytes(
+    modelo: str,
+    num_ctx: int,
+    tamanhos: dict[str, float] | None = None,
+    carregado: dict | None = None,
+) -> int:
+    """Bytes necessarios agora: carga completa ou custo marginal se ja residente no Ollama."""
     modelo_gb = _tamanho_modelo_gb(modelo, tamanhos)
     ctx = max(512, int(num_ctx or CONTEXT_PADRAO))
-    pesos = modelo_gb * 1.2
-    # KV cresce com ctx e com tamanho do modelo
     kv = (ctx / 4096.0) * modelo_gb * 0.42
-    return round(max(1.0, pesos + kv), 1)
+
+    if carregado and int(carregado.get("size") or 0) > 0:
+        ctx_atual = max(512, int(carregado.get("context_length") or 4096))
+        kv_atual = (ctx_atual / 4096.0) * modelo_gb * 0.42
+        if ctx <= ctx_atual:
+            marginal_gb = max(0.3, modelo_gb * 0.08)
+        else:
+            marginal_gb = max(0.35, (kv - kv_atual) + 0.25)
+        return int(marginal_gb * (1024 ** 3))
+
+    pesos = modelo_gb * 1.2
+    return int(max(1.0, pesos + kv) * (1024 ** 3))
+
+
+def estimar_ram_gb(
+    modelo: str,
+    num_ctx: int,
+    tamanhos: dict[str, float] | None = None,
+    carregado: dict | None = None,
+) -> float:
+    """Heuristica: pesos do modelo + KV cache proporcional ao contexto.
+
+    Com modelo ja carregado (`carregado` do /api/ps), estima so o custo marginal.
+    """
+    return round(estimar_need_bytes(modelo, num_ctx, tamanhos, carregado) / (1024 ** 3), 1)
 
 
 def _fmt_ram_gb(gb: float) -> str:
@@ -366,11 +401,12 @@ def _contextos_com_estimativa(
     tamanhos: dict[str, float] | None = None,
     ram: dict | None = None,
     vram: dict | None = None,
+    carregado: dict | None = None,
 ) -> list[dict]:
     out = []
     for c in CONTEXTOS:
-        gb = estimar_ram_gb(modelo, c["tokens"], tamanhos)
-        need = int(gb * (1024 ** 3))
+        gb = estimar_ram_gb(modelo, c["tokens"], tamanhos, carregado)
+        need = estimar_need_bytes(modelo, c["tokens"], tamanhos, carregado)
         item = {
             **c,
             "ram_gb": gb,
@@ -386,6 +422,7 @@ def sugerir_contexto(
     modelo: str = MODELO_PADRAO,
     tamanhos: dict[str, float] | None = None,
     vram: dict | None = None,
+    carregado: dict | None = None,
 ) -> int:
     """Maior contexto cuja estimativa cabe (VRAM preferencial + overflow em RAM)."""
     fallback = CONTEXT_PADRAO if CONTEXT_PADRAO in CONTEXTOS_PERMITIDOS else CONTEXTOS[0]["tokens"]
@@ -393,7 +430,7 @@ def sugerir_contexto(
         return fallback
     cabem = []
     for c in CONTEXTOS:
-        need = int(estimar_ram_gb(modelo, c["tokens"], tamanhos) * (1024 ** 3))
+        need = estimar_need_bytes(modelo, c["tokens"], tamanhos, carregado)
         if memoria_suficiente(need, ram, vram):
             cabem.append(c["tokens"])
     if not cabem:
@@ -407,19 +444,22 @@ def limitar_contexto(
     modelo: str = MODELO_PADRAO,
     tamanhos: dict[str, float] | None = None,
     vram: dict | None = None,
+    carregado: dict | None = None,
 ) -> tuple[int | None, dict | None]:
     """Ajusta num_ctx pra caber na memoria disponivel (GPU/RAM), sem matar mid-gen."""
     ram = ram if ram is not None else obter_ram()
     vram = vram if vram is not None else obter_vram()
     pedido = num_ctx if num_ctx in CONTEXTOS_PERMITIDOS else CONTEXT_PADRAO
 
-    need_pedido = int(estimar_ram_gb(modelo, pedido, tamanhos) * (1024 ** 3))
+    need_pedido = estimar_need_bytes(modelo, pedido, tamanhos, carregado)
     if memoria_suficiente(need_pedido, ram, vram):
         return pedido, None
 
-    seguro = sugerir_contexto(ram, modelo, tamanhos, vram)
-    need_min = int(estimar_ram_gb(modelo, CONTEXTOS[0]["tokens"], tamanhos) * (1024 ** 3))
+    seguro = sugerir_contexto(ram, modelo, tamanhos, vram, carregado)
+    need_min = estimar_need_bytes(modelo, CONTEXTOS[0]["tokens"], tamanhos, carregado)
     if not memoria_suficiente(need_min, ram, vram):
+        need_gb = need_min / (1024 ** 3)
+        folga_gb = _ram_folga_bytes(ram) / (1024 ** 3)
         partes = []
         if ram and ram.get("disponivel") is not None:
             partes.append(f"RAM livre {ram['disponivel'] / (1024 ** 3):.1f} GB")
@@ -429,12 +469,13 @@ def limitar_contexto(
                 + (f" ({vram.get('nome')})" if vram.get("nome") else "")
             )
         onde = " / ".join(partes) if partes else "sem leitura de memoria"
+        ja = " (modelo ja carregado no Ollama)" if carregado else ""
         return None, {
             "erro": True,
             "msg": (
-                f"Memoria baixa ({onde}). "
-                "Feche programas / outras apps na GPU, ou escolha um modelo mais leve "
-                "antes de gerar."
+                f"Contexto minimo (4k) estima ~{need_gb:.1f} GB + folga ~{folga_gb:.1f} GB{ja}, "
+                f"mas o servidor so tem {onde}. "
+                "Escolha um modelo mais leve ou feche outros programas na maquina do hub."
             ),
         }
 
@@ -446,7 +487,7 @@ def limitar_contexto(
         "usado": seguro,
         "msg": (
             f"Contexto reduzido de {_label_ctx(pedido)} para {_label_ctx(seguro)} "
-            f"(estimativa {_fmt_ram_gb(estimar_ram_gb(modelo, pedido, tamanhos))} "
+            f"(estimativa {_fmt_ram_gb(estimar_ram_gb(modelo, pedido, tamanhos, carregado))} "
             f"com `{modelo}`) pra caber com folga em {modo}."
         ),
     }
@@ -552,6 +593,53 @@ def _variantes_nome_modelo(modelo: str) -> list[str]:
     return uniq
 
 
+def _match_modelo_ps(nome: str, alvos: set[str]) -> bool:
+    nome = (nome or "").lower()
+    if not nome or not alvos:
+        return False
+    if nome in alvos:
+        return True
+    if any(nome.startswith(a + ":") or a.startswith(nome) for a in alvos):
+        return True
+    base = nome.split(":")[0]
+    return any(a.split(":")[0] == base for a in alvos)
+
+
+def _parse_modelo_carregado_ps(entry: dict) -> dict | None:
+    nome = entry.get("name") or entry.get("model") or ""
+    size = int(entry.get("size") or 0)
+    if not nome or size <= 0:
+        return None
+    ctx_len = entry.get("context_length")
+    if not ctx_len:
+        opts = entry.get("options") or {}
+        ctx_len = opts.get("num_ctx")
+    return {
+        "name": nome,
+        "size": size,
+        "context_length": int(ctx_len) if ctx_len else 4096,
+    }
+
+
+async def obter_modelo_carregado(modelo: str) -> dict | None:
+    """Modelo residente no Ollama (/api/ps) — evita contar pesos duas vezes na RAM."""
+    alvos = {n.lower() for n in _variantes_nome_modelo(modelo)}
+    if not alvos:
+        return None
+    try:
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            ps = await client.get(f"{OLLAMA_BASE_URL}/api/ps")
+            if ps.status_code != 200:
+                return None
+            for m in (ps.json() or {}).get("models") or []:
+                nome = m.get("name") or m.get("model") or ""
+                if _match_modelo_ps(nome, alvos):
+                    return _parse_modelo_carregado_ps(m)
+    except Exception:
+        return None
+    return None
+
+
 async def _modelo_ainda_carregado(nomes: list[str]) -> bool:
     alvos = {n.lower() for n in nomes}
     try:
@@ -560,13 +648,8 @@ async def _modelo_ainda_carregado(nomes: list[str]) -> bool:
             if ps.status_code != 200:
                 return False
             for m in (ps.json() or {}).get("models") or []:
-                nome = (m.get("name") or m.get("model") or "").lower()
-                if not nome:
-                    continue
-                if nome in alvos or any(nome.startswith(a + ":") or a.startswith(nome) for a in alvos):
-                    return True
-                base = nome.split(":")[0]
-                if any(a.split(":")[0] == base for a in alvos):
+                nome = m.get("name") or m.get("model") or ""
+                if _match_modelo_ps(nome, alvos):
                     return True
     except Exception:
         return False
@@ -999,14 +1082,16 @@ async def verificar_status(modelo: str = MODELO_PADRAO) -> dict:
     info["ram"] = obter_ram()
     info["vram"] = obter_vram()
     info["memoria_modo"] = _modo_memoria(info["vram"])
-    sugerido = sugerir_contexto(info["ram"], modelo, tamanhos, info["vram"])
+    carregado = await obter_modelo_carregado(modelo) if info["ollama_ativo"] else None
+    info["modelo_carregado"] = bool(carregado)
+    sugerido = sugerir_contexto(info["ram"], modelo, tamanhos, info["vram"], carregado)
     info["contexto_sugerido"] = sugerido
     info["contexto_padrao"] = sugerido
-    info["ram_folga_bytes"] = RAM_FOLGA_BYTES
+    info["ram_folga_bytes"] = _ram_folga_bytes(info["ram"])
     info["vram_folga_bytes"] = VRAM_FOLGA_BYTES
     info["modelo_tamanho_gb"] = round(_tamanho_modelo_gb(modelo, tamanhos), 1)
     info["contextos"] = _contextos_com_estimativa(
-        modelo, tamanhos, info["ram"], info["vram"]
+        modelo, tamanhos, info["ram"], info["vram"], carregado
     )
     for c in info["contextos"]:
         c["indicado"] = c["tokens"] == sugerido
@@ -1486,7 +1571,10 @@ async def stream_chat(
 
     ram = obter_ram()
     vram = obter_vram()
-    ctx, aviso = limitar_contexto(num_ctx, ram, modelo, vram=vram)
+    carregado = await obter_modelo_carregado(modelo)
+    ctx, aviso = limitar_contexto(
+        num_ctx, ram, modelo, vram=vram, carregado=carregado
+    )
     if aviso and aviso.get("erro"):
         yield aviso
         return
