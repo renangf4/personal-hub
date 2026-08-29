@@ -823,12 +823,13 @@
 
     async function garantirConversaAtiva(chats) {
         if (chatAtual) return;
-        const rascunho = (chats || []).find(c => !c.total_mensagens);
-        if (rascunho) {
-            await abrirChat(rascunho.id);
+        const lista = chats || [];
+        if (!lista.length) {
+            await criarNovaConversa();
             return;
         }
-        await criarNovaConversa();
+        // Lista ja vem por atualizado_em DESC — abre a conversa mais recente.
+        await abrirChat(lista[0].id);
     }
 
     function renderListaChats(chats) {
