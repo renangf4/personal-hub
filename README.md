@@ -10,7 +10,7 @@ Instale sob demanda pela **Loja** (`/loja`):
 - **Imagem** — WebP, PNG, JPEG, GIF, BMP, TIFF; qualidade padrao 90%; estimativa automatica; resultados em card com preview
 - **Screenshot WordPress** — padroniza em 1200x900 PNG comprimido; qualidade padrao 50%; estimativa de tamanho
 - **Desbloquear PDF** — senhas salvas, senha unica, wordlist ou PIN numerico
-- **Assistente de IA Local** — chat com Ollama (modelos de programacao + DeepHat); anexos; editar/regerar; descarregar modelo da RAM; contexto sugerido pela memoria livre
+- **Assistente de IA Local** — chat com Ollama (modelos de programacao + DeepHat leve/completo); loja em accordion; anexos; editar/regerar; descarregar modelo da RAM; contexto sugerido pela memoria livre
 - **DNS e Whois** — DNS (incl. SPF/DMARC/CAA), Whois, IP/geo, HTTP/TLS, Origem CF, portas, ping/traceroute, crt.sh, RBL, OSINT, Shodan / AbuseIPDB / VirusTotal (keys opcionais)
 - **Criptografar / Descriptografar** — AES-256-GCM no navegador (compativel com [gcm-encrypt-decrypt](https://github.com/renangf4/gcm-encrypt-decrypt))
 - **Cofre de senhas** — arquivo `.hubvault` criptografado no navegador; importar / exportar / excluir; senha-mestra nunca gravada

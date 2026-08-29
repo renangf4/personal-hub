@@ -286,13 +286,25 @@ def _params_b_do_modelo(modelo: str, preset: dict | None = None) -> float | None
     return None
 
 
-def _preset_do_modelo(modelo: str) -> dict | None:
+def _slug_casa_preset(modelo: str, slug: str) -> bool:
     low = (modelo or "").strip().lower()
+    s = slug.lower()
+    if low == s or low.startswith(s + ":"):
+        return True
+    if s == low.split(":", 1)[0]:
+        return True
+    return bool("/" in s and s in low)
+
+
+def _preset_do_modelo(modelo: str) -> dict | None:
+    melhor: tuple[int, dict] | None = None
     for preset in MODELOS_PRESET:
-        slug = preset["slug"].lower()
-        if low == slug or low.startswith(slug + ":") or slug in low:
-            return preset
-    return None
+        slug = preset["slug"]
+        if _slug_casa_preset(modelo, slug):
+            n = len(slug)
+            if melhor is None or n > melhor[0]:
+                melhor = (n, preset)
+    return melhor[1] if melhor else None
 
 
 def _inferir_quant_label(tamanho_gb: float, params_b: float | None) -> str:
@@ -390,6 +402,17 @@ def _enriquecer_preset(preset: dict, tamanhos: dict[str, float] | None) -> dict:
         out["ram_detalhe"] = _ram_detalhe_tecnico(tamanho_gb, params_b, ctx_ref, quant)
         return out
 
+    quant_preset = str(preset.get("quant_label") or "").strip()
+    if quant_preset and params_b:
+        peso = _parse_tamanho_gb(preset.get("tamanho")) or round(params_b * 0.55, 1)
+        total = _ram_total_gb(peso, params_b, ctx_ref, quant_preset)
+        out["quant_label"] = quant_preset
+        out["ram_estimada_gb"] = round(total, 1)
+        out["ram_minima_gb"] = int(math.ceil(total))
+        out["ram_nota"] = _ram_nota_leiga(total)
+        out["ram_detalhe"] = _ram_detalhe_tecnico(peso, params_b, ctx_ref, quant_preset)
+        return out
+
     # Ainda nao baixado — faixa tipica Q4 a FP16
     if params_b:
         peso_q4 = round(params_b * 0.55, 1)
@@ -436,12 +459,11 @@ def _tamanho_modelo_gb(modelo: str, tamanhos: dict[str, float] | None = None) ->
                 return v
             if low.startswith(kl.rsplit(":", 1)[0] + ":") or kl.startswith(low.rsplit(":", 1)[0] + ":"):
                 return v
-    for preset in MODELOS_PRESET:
-        slug = preset["slug"].lower()
-        if low == slug or low.startswith(slug + ":") or slug in low:
-            gb = _parse_tamanho_gb(preset.get("tamanho"))
-            if gb:
-                return gb
+    preset = _preset_do_modelo(nome)
+    if preset:
+        gb = _parse_tamanho_gb(preset.get("tamanho"))
+        if gb:
+            return gb
     inferido = _inferir_gb_do_nome(nome)
     if inferido:
         return inferido
@@ -1069,12 +1091,26 @@ MODELOS_PRESET = [
     },
     # Seguranca (DeepHat)
     {
+        "slug": "hf.co/liodon-ai/DeepHat-V1-7B-imatrix-GGUF:Q4_K_M",
+        "nome": "DeepHat",
+        "parametros": "7B · leve",
+        "quant_label": "Q4",
+        "descricao": (
+            "Mesmo DeepHat em Q4 (~5 GB). Pentest, red team, payloads e recon — "
+            "feito para PCs com 8 GB de RAM."
+        ),
+        "tamanho": "~4.7 GB",
+        "icone": "bi-shield-lock",
+        "foco": "seguranca",
+    },
+    {
         "slug": "DeepHat/DeepHat-V1-7B",
         "nome": "DeepHat",
-        "parametros": "7B",
+        "parametros": "7B · completo",
+        "quant_label": "FP16+",
         "descricao": (
-            "Agente de cybersecurity e red team: analise ofensiva, payloads, "
-            "recon, exploit chains e hardening."
+            "Pesos completos, maxima qualidade. Cybersecurity e analise ofensiva — "
+            "exige 16 GB+ de RAM; com 8 GB use o leve."
         ),
         "tamanho": "~14 GB",
         "icone": "bi-shield-lock",
@@ -1114,11 +1150,16 @@ def _modelo_disponivel(modelo: str, modelos: list[str]) -> bool:
 
 def _nome_instalado(modelo: str, modelos: list[str]) -> str | None:
     """Retorna o nome exato instalado no Ollama correspondente ao slug do preset."""
-    m = modelo.lower()
+    m = modelo.lower().strip()
+    if not m:
+        return None
+    m_base = m.split(":", 1)[0]
     for nome in modelos:
         n = nome.lower()
         base = n.split(":", 1)[0]
-        if n == m or n.startswith(m + ":") or base == m:
+        if n == m or n.startswith(m + ":") or base == m or base == m_base:
+            return nome
+        if m_base in n and ("deephat" in m or "gguf" in m):
             return nome
     return None
 
@@ -1196,13 +1237,10 @@ def _foco_prompt_key(foco: str) -> str:
 
 
 def _foco_do_modelo(modelo: str) -> str:
+    preset = _preset_do_modelo(modelo)
+    if preset:
+        return _foco_prompt_key(preset.get("foco", "codigo"))
     m = modelo.lower()
-    for preset in MODELOS_PRESET:
-        slug = preset["slug"].lower()
-        if m == slug or m.startswith(slug + ":") or slug == m.split(":", 1)[0]:
-            return _foco_prompt_key(preset.get("foco", "codigo"))
-        if "/" in slug and slug in m:
-            return _foco_prompt_key(preset.get("foco", "codigo"))
     if "deephat" in m:
         return "seguranca"
     if any(

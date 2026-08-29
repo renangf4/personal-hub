@@ -405,17 +405,23 @@
             const grupo = presets.filter(p => (p.foco || 'geral') === focoId);
             if (!grupo.length) continue;
             const meta = mapaFoco[focoId] || { nome: focoId, icone: 'bi-collection', descricao: '' };
+            const aberto = html === '';
             html += `
                 <div class="col-12">
-                    <div class="ai-foco">
-                        <div class="ai-foco__head">
-                            <i class="bi ${escapeHtml(meta.icone)}"></i>
-                            <div>
-                                <div class="ai-foco__nome">${escapeHtml(meta.nome)}</div>
-                                <div class="ai-foco__desc">${escapeHtml(meta.descricao || '')}</div>
+                    <details class="ai-foco"${aberto ? ' open' : ''}>
+                        <summary class="ai-foco__summary">
+                            <div class="ai-foco__head">
+                                <i class="bi ${escapeHtml(meta.icone)}"></i>
+                                <div class="ai-foco__texto">
+                                    <div class="ai-foco__nome">${escapeHtml(meta.nome)}</div>
+                                    <div class="ai-foco__desc">${escapeHtml(meta.descricao || '')}</div>
+                                </div>
+                                <span class="ai-foco__meta">${grupo.length} modelo${grupo.length === 1 ? '' : 's'}</span>
+                                <i class="bi bi-chevron-down ai-foco__chevron" aria-hidden="true"></i>
                             </div>
-                        </div>
-                        <div class="row g-3">
+                        </summary>
+                        <div class="ai-foco__body">
+                            <div class="row g-3">
                             ${grupo.map((p) => `
                                 <div class="col-12 col-sm-6 col-lg-4">
                                     <div class="ai-preset ${p.baixado ? 'ai-preset--baixado' : ''} ${!presetCabeNoServidor(p) ? 'ai-preset--apertado' : ''}">
@@ -447,8 +453,9 @@
                                     </div>
                                 </div>
                             `).join('')}
+                            </div>
                         </div>
-                    </div>
+                    </details>
                 </div>
             `;
         }
