@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import os
 import secrets
+from pathlib import Path
 
 from fastapi import Request, WebSocket
 from fastapi.responses import RedirectResponse, Response
@@ -12,7 +14,33 @@ from fastapi.responses import RedirectResponse, Response
 from . import config
 
 COOKIE_NAME = "hub_session"
-_SESSION_SECRET = secrets.token_bytes(32)
+_SECRET_PATH = Path(__file__).resolve().parent.parent / "storage" / ".hub_session_secret"
+
+
+def _carregar_session_secret() -> bytes:
+    """Segredo estavel entre restarts/reload — senao o cookie LAN invalida a cada reload."""
+    try:
+        if _SECRET_PATH.is_file():
+            bruto = _SECRET_PATH.read_bytes()
+            if len(bruto) >= 32:
+                return bruto[:32]
+    except OSError:
+        pass
+
+    segredo = secrets.token_bytes(32)
+    try:
+        _SECRET_PATH.parent.mkdir(parents=True, exist_ok=True)
+        _SECRET_PATH.write_bytes(segredo)
+        try:
+            os.chmod(_SECRET_PATH, 0o600)
+        except OSError:
+            pass
+    except OSError:
+        pass
+    return segredo
+
+
+_SESSION_SECRET = _carregar_session_secret()
 
 
 def _session_token() -> str:

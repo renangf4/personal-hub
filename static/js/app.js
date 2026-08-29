@@ -1,4 +1,20 @@
 (function () {
+    const origFetch = window.fetch.bind(window);
+    window.fetch = async function (input, init) {
+        const resp = await origFetch(input, init);
+        if (resp.status !== 401) return resp;
+        let path = '';
+        try {
+            path = new URL(typeof input === 'string' ? input : input.url, location.origin).pathname;
+        } catch (_) {
+            return resp;
+        }
+        if (path.startsWith('/login')) return resp;
+        const next = encodeURIComponent(location.pathname + location.search);
+        location.href = `/login?next=${next}`;
+        return resp;
+    };
+
     const form = document.getElementById('form-processar');
     const status = document.getElementById('status');
     const wrap = document.getElementById('resultados-wrap');
