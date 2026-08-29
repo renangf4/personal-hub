@@ -316,6 +316,52 @@
         }
     }
 
+    function ramTotalServidorGb() {
+        const ram = ultimoStatus && ultimoStatus.ram;
+        if (!ram || !ram.total) return null;
+        return ram.total / (1024 * 1024 * 1024);
+    }
+
+    function presetCabeNoServidor(p) {
+        const total = ramTotalServidorGb();
+        if (total == null || !p.ram_minima_gb) return true;
+        return total >= p.ram_minima_gb - 0.5;
+    }
+
+    function rotuloPreset(p) {
+        const base = p.nome || p.slug;
+        return p.parametros ? `${base} · ${p.parametros}` : base;
+    }
+
+    function htmlSpecsPreset(p) {
+        const cabe = presetCabeNoServidor(p);
+        const rows = [];
+        if (p.parametros) {
+            rows.push(`<div class="ai-preset__spec">
+                <span class="ai-preset__spec-label">Parametros</span>
+                <span class="ai-preset__spec-val">${escapeHtml(p.parametros)}</span>
+            </div>`);
+        }
+        if (p.ram_minima_gb) {
+            const alerta = cabe ? '' : ' ai-preset__spec-val--alerta';
+            rows.push(`<div class="ai-preset__spec">
+                <span class="ai-preset__spec-label">RAM minima</span>
+                <span class="ai-preset__spec-val${alerta}">~${p.ram_minima_gb} GB</span>
+            </div>`);
+        }
+        if (p.tamanho) {
+            rows.push(`<div class="ai-preset__spec">
+                <span class="ai-preset__spec-label">Download</span>
+                <span class="ai-preset__spec-val">${escapeHtml(p.tamanho)}</span>
+            </div>`);
+        }
+        const aviso = cabe ? '' : (
+            '<div class="ai-preset__spec-aviso">' +
+            '<i class="bi bi-exclamation-triangle me-1"></i>Acima da RAM desta maquina</div>'
+        );
+        return `<div class="ai-preset__specs">${rows.join('')}${aviso}</div>`;
+    }
+
     function renderPresets(presets, gerenciar) {
         const focos = (ultimoStatus && ultimoStatus.focos) || [];
         const ordem = focos.length
@@ -344,13 +390,16 @@
                         <div class="row g-3">
                             ${grupo.map((p) => `
                                 <div class="col-12 col-sm-6 col-lg-4">
-                                    <div class="ai-preset ${p.baixado ? 'ai-preset--baixado' : ''}">
+                                    <div class="ai-preset ${p.baixado ? 'ai-preset--baixado' : ''} ${!presetCabeNoServidor(p) ? 'ai-preset--apertado' : ''}">
                                         <div class="ai-preset__head">
                                             <i class="bi ${p.icone} fs-4 text-primary"></i>
-                                            <span class="ai-preset__nome">${escapeHtml(p.nome)}</span>
-                                            <span class="ai-preset__tamanho">${escapeHtml(p.tamanho)}</span>
+                                            <div class="ai-preset__titulo min-w-0">
+                                                <span class="ai-preset__nome">${escapeHtml(p.nome)}</span>
+                                                ${p.parametros ? `<span class="ai-preset__params">${escapeHtml(p.parametros)}</span>` : ''}
+                                            </div>
                                         </div>
                                         <div class="ai-preset__desc">${escapeHtml(p.descricao)}</div>
+                                        ${htmlSpecsPreset(p)}
                                         <div class="ai-preset__slug">${escapeHtml(p.slug)}</div>
                                         ${p.baixado
                                             ? `<div class="ai-preset__acoes">
@@ -399,7 +448,7 @@
             const label = (mapaFoco[focoId] && mapaFoco[focoId].nome) || focoId;
             html += `<optgroup label="${escapeHtml(label)}">`;
             html += grupo.map(p =>
-                `<option value="${escapeHtml(p.slug)}">${escapeHtml(p.nome)}</option>`
+                `<option value="${escapeHtml(p.slug)}">${escapeHtml(rotuloPreset(p))}</option>`
             ).join('');
             html += `</optgroup>`;
         }

@@ -787,187 +787,192 @@ async def _matar_llama_server_se_inchado(limite_mb: int = 800) -> None:
             return
 
 FOCOS = {
+    "codigo-leve": {
+        "id": "codigo-leve",
+        "nome": "Codigo — leve",
+        "icone": "bi-lightning-charge",
+        "descricao": "Snippets, autocomplete e duvidas rapidas.",
+    },
     "codigo": {
         "id": "codigo",
-        "nome": "Codigo",
+        "nome": "Codigo — dia a dia",
         "icone": "bi-code-slash",
-        "descricao": "Programacao, refatoracao e arquitetura.",
+        "descricao": "Programacao, refatoracao, debug e arquitetura.",
     },
     "seguranca": {
         "id": "seguranca",
-        "nome": "Seguranca",
+        "nome": "Seguranca / DevSecOps",
         "icone": "bi-shield-lock",
-        "descricao": "Cybersecurity, red team e DevSecOps.",
+        "descricao": "Cybersecurity, red team e analise ofensiva.",
     },
-    "geral": {
-        "id": "geral",
-        "nome": "Geral",
-        "icone": "bi-chat-dots",
-        "descricao": "Chat, escrita e tarefas do dia a dia.",
-    },
-    "raciocinio": {
-        "id": "raciocinio",
-        "nome": "Raciocinio",
-        "icone": "bi-lightbulb",
-        "descricao": "Logica, matematica e problemas complexos.",
-    },
-    "leve": {
-        "id": "leve",
-        "nome": "Leve / Rapido",
-        "icone": "bi-lightning-charge",
-        "descricao": "Respostas rapidas com pouco uso de RAM.",
+    "codigo-pesado": {
+        "id": "codigo-pesado",
+        "nome": "Codigo — pesado",
+        "icone": "bi-braces-asterisk",
+        "descricao": "Projetos grandes e multi-arquivo. Exige mais RAM.",
     },
 }
 
 MODELOS_PRESET = [
-    # Codigo
+    # Codigo leve
     {
         "slug": "qwen2.5-coder:1.5b",
-        "nome": "Qwen Coder 1.5B",
-        "descricao": "Autocomplete e snippets. Muito rapido.",
+        "nome": "Qwen Coder",
+        "parametros": "1.5B",
+        "ram_minima_gb": 4,
+        "descricao": (
+            "Agente ultraleve para autocomplete, corrigir sintaxe e tirar duvidas "
+            "pontuais sem travar o PC."
+        ),
         "tamanho": "~1.0 GB",
         "icone": "bi-lightning-charge",
-        "foco": "codigo",
+        "foco": "codigo-leve",
     },
     {
+        "slug": "starcoder2:3b",
+        "nome": "StarCoder2",
+        "parametros": "3B",
+        "ram_minima_gb": 6,
+        "descricao": (
+            "Treinado em repositorios reais (BigCode). Bom para varias linguagens, "
+            "boilerplate e scripts curtos."
+        ),
+        "tamanho": "~1.7 GB",
+        "icone": "bi-stars",
+        "foco": "codigo-leve",
+    },
+    {
+        "slug": "codegemma:2b",
+        "nome": "CodeGemma",
+        "parametros": "2B",
+        "ram_minima_gb": 4,
+        "descricao": (
+            "Google focado em codigo. Responde rapido em notebooks e ajuda com "
+            "funcoes pequenas e explicacoes de trecho."
+        ),
+        "tamanho": "~1.6 GB",
+        "icone": "bi-lightning",
+        "foco": "codigo-leve",
+    },
+    # Codigo dia a dia
+    {
         "slug": "qwen2.5-coder:3b",
-        "nome": "Qwen Coder 3B",
-        "descricao": "Equilibrio ideal pra codigo no dia a dia.",
+        "nome": "Qwen Coder",
+        "parametros": "3B",
+        "ram_minima_gb": 6,
+        "descricao": (
+            "Padrao do hub. Explica logica, refatora funcoes, sugere testes e revisa "
+            "trechos em Python, JS, SQL, shell e configs."
+        ),
         "tamanho": "~2.0 GB",
         "icone": "bi-stars",
         "foco": "codigo",
     },
     {
         "slug": "qwen2.5-coder:7b",
-        "nome": "Qwen Coder 7B",
-        "descricao": "Melhor qualidade em codigo e debug.",
+        "nome": "Qwen Coder",
+        "parametros": "7B",
+        "ram_minima_gb": 8,
+        "descricao": (
+            "Mais contexto e precisao em debug, arquitetura leve e documentacao "
+            "tecnica. Indicado com 8 GB+ de RAM."
+        ),
         "tamanho": "~4.7 GB",
         "icone": "bi-gem",
         "foco": "codigo",
     },
     {
-        "slug": "deepseek-coder-v2:16b",
-        "nome": "DeepSeek Coder V2",
-        "descricao": "Forte em codigo longo e multi-linguagem. Mais pesado.",
-        "tamanho": "~8.9 GB",
-        "icone": "bi-braces",
+        "slug": "deepseek-coder:6.7b",
+        "nome": "DeepSeek Coder",
+        "parametros": "6.7B",
+        "ram_minima_gb": 8,
+        "descricao": (
+            "Forte em Python e JavaScript: refatoracao, APIs, tipos e raciocinio "
+            "passo a passo em problemas de codigo."
+        ),
+        "tamanho": "~3.8 GB",
+        "icone": "bi-filetype-js",
         "foco": "codigo",
     },
     {
         "slug": "codellama:7b",
-        "nome": "Code Llama 7B",
-        "descricao": "Classico da Meta focado em programacao.",
+        "nome": "Code Llama",
+        "parametros": "7B",
+        "ram_minima_gb": 8,
+        "descricao": (
+            "Classico da Meta para programacao. Bom em C/C++, Python e completar "
+            "funcoes com estilo consistente."
+        ),
         "tamanho": "~3.8 GB",
         "icone": "bi-filetype-py",
         "foco": "codigo",
     },
-    # Seguranca
+    {
+        "slug": "starcoder2:7b",
+        "nome": "StarCoder2",
+        "parametros": "7B",
+        "ram_minima_gb": 8,
+        "descricao": (
+            "Versao maior para repos extensos, multi-arquivo e padroes de projeto "
+            "em varias linguagens."
+        ),
+        "tamanho": "~4.0 GB",
+        "icone": "bi-git",
+        "foco": "codigo",
+    },
+    {
+        "slug": "codegemma:7b",
+        "nome": "CodeGemma",
+        "parametros": "7B",
+        "ram_minima_gb": 8,
+        "descricao": (
+            "Segue instrucoes complexas, gera modulos inteiros e ajuda a manter "
+            "codigo legivel e bem estruturado."
+        ),
+        "tamanho": "~5.0 GB",
+        "icone": "bi-code-square",
+        "foco": "codigo",
+    },
+    # Seguranca (DeepHat)
     {
         "slug": "DeepHat/DeepHat-V1-7B",
         "nome": "DeepHat",
-        "descricao": "Cybersecurity / red team. Pesado (~14 GB) — servidor com 16 GB+ RAM.",
+        "parametros": "7B",
+        "ram_minima_gb": 16,
+        "descricao": (
+            "Agente de cybersecurity e red team: analise ofensiva, payloads, "
+            "recon, exploit chains e hardening. Modelo grande — precisa de maquina robusta."
+        ),
         "tamanho": "~14 GB",
         "icone": "bi-shield-lock",
         "foco": "seguranca",
     },
-    # Geral
+    # Codigo pesado
     {
-        "slug": "llama3.2:3b",
-        "nome": "Llama 3.2 3B",
-        "descricao": "Chat leve e versatil da Meta.",
-        "tamanho": "~2.0 GB",
-        "icone": "bi-chat-dots",
-        "foco": "geral",
+        "slug": "deepseek-coder-v2:16b",
+        "nome": "DeepSeek Coder V2",
+        "parametros": "16B",
+        "ram_minima_gb": 16,
+        "descricao": (
+            "Para codebases grandes, migracoes e varios arquivos abertos. "
+            "Entende dependencias cruzadas e refatoracoes amplas."
+        ),
+        "tamanho": "~8.9 GB",
+        "icone": "bi-braces",
+        "foco": "codigo-pesado",
     },
     {
-        "slug": "llama3.1:8b",
-        "nome": "Llama 3.1 8B",
-        "descricao": "Bom all-rounder pra conversa e tarefas gerais.",
-        "tamanho": "~4.7 GB",
-        "icone": "bi-chat-square-text",
-        "foco": "geral",
-    },
-    {
-        "slug": "qwen2.5:7b",
-        "nome": "Qwen 2.5 7B",
-        "descricao": "Multilingual forte, bom em instrucoes.",
-        "tamanho": "~4.7 GB",
-        "icone": "bi-globe2",
-        "foco": "geral",
-    },
-    {
-        "slug": "mistral:7b",
-        "nome": "Mistral 7B",
-        "descricao": "Rapido e competente pra chat geral.",
-        "tamanho": "~4.1 GB",
-        "icone": "bi-cloud",
-        "foco": "geral",
-    },
-    {
-        "slug": "gemma2:9b",
-        "nome": "Gemma 2 9B",
-        "descricao": "Google DeepMind, bom em seguir instrucoes.",
-        "tamanho": "~5.4 GB",
-        "icone": "bi-diamond",
-        "foco": "geral",
-    },
-    # Raciocinio
-    {
-        "slug": "deepseek-r1:7b",
-        "nome": "DeepSeek R1 7B",
-        "descricao": "Raciocinio passo a passo, math e logica.",
-        "tamanho": "~4.7 GB",
-        "icone": "bi-lightbulb",
-        "foco": "raciocinio",
-    },
-    {
-        "slug": "deepseek-r1:14b",
-        "nome": "DeepSeek R1 14B",
-        "descricao": "Raciocinio mais profundo. Exige mais RAM.",
+        "slug": "qwen2.5-coder:14b",
+        "nome": "Qwen Coder",
+        "parametros": "14B",
+        "ram_minima_gb": 16,
+        "descricao": (
+            "Maxima qualidade em codigo: design de sistemas, reviews profundos "
+            "e geracao longa com poucos erros."
+        ),
         "tamanho": "~9.0 GB",
         "icone": "bi-cpu",
-        "foco": "raciocinio",
-    },
-    {
-        "slug": "phi4-mini",
-        "nome": "Phi-4 Mini",
-        "descricao": "Microsoft: denso e forte em STEM no tamanho pequeno.",
-        "tamanho": "~2.5 GB",
-        "icone": "bi-mortarboard",
-        "foco": "raciocinio",
-    },
-    {
-        "slug": "phi4",
-        "nome": "Phi-4 14B",
-        "descricao": "STEM e raciocinio analitico de alto nivel.",
-        "tamanho": "~9.1 GB",
-        "icone": "bi-mortarboard-fill",
-        "foco": "raciocinio",
-    },
-    # Leve
-    {
-        "slug": "llama3.2:1b",
-        "nome": "Llama 3.2 1B",
-        "descricao": "Minimo absoluto. Ideal pra testes rapidos.",
-        "tamanho": "~1.3 GB",
-        "icone": "bi-lightning",
-        "foco": "leve",
-    },
-    {
-        "slug": "gemma2:2b",
-        "nome": "Gemma 2 2B",
-        "descricao": "Leve da Google, surpreende pelo tamanho.",
-        "tamanho": "~1.6 GB",
-        "icone": "bi-lightning-charge-fill",
-        "foco": "leve",
-    },
-    {
-        "slug": "qwen2.5:1.5b",
-        "nome": "Qwen 2.5 1.5B",
-        "descricao": "Chat multilingual ultra leve.",
-        "tamanho": "~1.0 GB",
-        "icone": "bi-speedometer",
-        "foco": "leve",
+        "foco": "codigo-pesado",
     },
 ]
 
@@ -1053,25 +1058,32 @@ SYSTEM_PROMPTS_FOCO = {
 }
 
 
+def _foco_prompt_key(foco: str) -> str:
+    if foco.startswith("codigo"):
+        return "codigo"
+    return foco
+
+
 def _foco_do_modelo(modelo: str) -> str:
     m = modelo.lower()
     for preset in MODELOS_PRESET:
         slug = preset["slug"].lower()
         if m == slug or m.startswith(slug + ":") or slug == m.split(":", 1)[0]:
-            return preset.get("foco", "geral")
+            return _foco_prompt_key(preset.get("foco", "codigo"))
         if "/" in slug and slug in m:
-            return preset.get("foco", "geral")
+            return _foco_prompt_key(preset.get("foco", "codigo"))
     if "deephat" in m:
         return "seguranca"
-    if "coder" in m or "codellama" in m:
+    if any(
+        k in m
+        for k in ("coder", "codellama", "starcoder", "codegemma", "magicoder", "granite-code")
+    ):
         return "codigo"
-    if "r1" in m or "phi" in m:
-        return "raciocinio"
-    return "geral"
+    return "codigo"
 
 
 def _system_prompt_para(modelo: str) -> str:
-    return SYSTEM_PROMPTS_FOCO.get(_foco_do_modelo(modelo), SYSTEM_PROMPT_GERAL)
+    return SYSTEM_PROMPTS_FOCO.get(_foco_do_modelo(modelo), SYSTEM_PROMPT_CODIGO)
 
 
 async def obter_tamanhos_ollama() -> dict[str, float]:

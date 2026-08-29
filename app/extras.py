@@ -66,7 +66,7 @@ EXTRAS: dict[str, dict] = {
     "ai": {
         "slug": "ai",
         "nome": "Assistente de IA",
-        "descricao": "Chat local com Ollama — carteiras por foco (codigo, seguranca, geral...).",
+        "descricao": "Chat local com Ollama — modelos focados em programacao e seguranca (DeepHat).",
         "icone": "bi-robot",
         "packages": ["httpx==0.27.2", "pypdf==5.1.0"],
         "imports": ["httpx", "pypdf"],
@@ -217,7 +217,7 @@ TOOL_META: dict[str, dict] = {
     "ai_chat": {
         "slug": "ai-chat",
         "nome": "Assistente de IA Local",
-        "descricao": "Chat local com Ollama — carteira por foco (codigo, seguranca, geral...).",
+        "descricao": "Chat local com Ollama — modelos focados em programacao e seguranca (DeepHat).",
         "icone": "bi-robot",
         "aceita": "",
         "controles": "ai",
