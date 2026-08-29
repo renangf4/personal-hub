@@ -20,12 +20,17 @@
     const fileInput = document.getElementById('lan-arquivo');
     const anexosEl = document.getElementById('lan-anexos');
     const btnEnviar = document.getElementById('lan-btn-enviar');
+    const btnRefresh = document.getElementById('lan-btn-refresh');
 
     let apelido = '';
     let canalAtual = CANAL_GERAL;
     let ultimoId = 0;
     /** @type {WebSocket|null} */
     let ws = null;
+    /** @type {ReturnType<typeof setInterval>|null} */
+    let pollTimer = null;
+    /** @type {ReturnType<typeof setInterval>|null} */
+    let pingTimer = null;
     /** @type {File[]} */
     let anexos = [];
     let enviando = false;
@@ -142,19 +147,54 @@
         scrollFim();
     }
 
-    async function carregarHistorico() {
+    async function carregarHistorico(reset) {
         const params = new URLSearchParams({
             apelido: apelido,
             destinatario: canalAtual === CANAL_GERAL ? '' : canalAtual,
-            desde_id: '0',
+            desde_id: reset ? '0' : String(ultimoId),
         });
         const resp = await fetch('/api/lan-dm/mensagens?' + params.toString());
         if (!resp.ok) return;
         const data = await resp.json();
-        mensagensEl.innerHTML = '';
-        ultimoId = 0;
+        if (reset) {
+            mensagensEl.innerHTML = '';
+            ultimoId = 0;
+        }
         (data.mensagens || []).forEach((m) => appendMensagem(m));
     }
+
+    async function pollNovasMensagens() {
+        if (!apelido || document.hidden) return;
+        await carregarHistorico(false);
+    }
+
+    function pararPing() {
+        if (pingTimer) {
+            clearInterval(pingTimer);
+            pingTimer = null;
+        }
+    }
+
+    function iniciarPing() {
+        pararPing();
+        pingTimer = setInterval(() => {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                try { ws.send('ping'); } catch (_) {}
+            }
+        }, 25000);
+    }
+
+    function iniciarPoll() {
+        if (pollTimer) return;
+        pollTimer = setInterval(() => pollNovasMensagens(), 4000);
+    }
+
+    window.lanDmRecarregarAposLimpar = async function () {
+        await carregarHistorico(true);
+        if (typeof window.atualizarLabelLixo === 'function') {
+            window.atualizarLabelLixo();
+        }
+    };
 
     function marcarCanalAtivo() {
         document.querySelectorAll('.lan-chat__canal, .lan-chat__peer').forEach((el) => {
@@ -174,7 +214,7 @@
     function selecionarCanal(dest) {
         canalAtual = dest || CANAL_GERAL;
         marcarCanalAtivo();
-        carregarHistorico();
+        carregarHistorico(true);
     }
 
     function renderOnline(lista) {
@@ -200,6 +240,7 @@
             try { ws.close(); } catch (_) {}
             ws = null;
         }
+        pararPing();
         setStatus('warn', 'conectando...');
         ws = new WebSocket(wsUrl());
 
@@ -213,6 +254,7 @@
             if (data.tipo === 'joined') {
                 setStatus('ok', 'online');
                 renderOnline(data.online || []);
+                iniciarPing();
                 return;
             }
             if (data.tipo === 'presence') {
@@ -225,6 +267,7 @@
         });
 
         ws.addEventListener('close', (ev) => {
+            pararPing();
             setStatus('erro', 'desconectado');
             if (ev.code === 4409) {
                 mostrarErroGate('Apelido ja em uso por outro PC. Escolha outro.');
@@ -238,7 +281,10 @@
                 return;
             }
             setTimeout(() => {
-                if (apelido && !chat.classList.contains('d-none')) conectarWs();
+                if (apelido && !chat.classList.contains('d-none')) {
+                    conectarWs();
+                    pollNovasMensagens();
+                }
             }, 2500);
         });
 
@@ -255,7 +301,8 @@
         chat.classList.remove('d-none');
         canalAtual = CANAL_GERAL;
         marcarCanalAtivo();
-        await carregarHistorico();
+        await carregarHistorico(true);
+        iniciarPoll();
         conectarWs();
     }
 
@@ -321,6 +368,18 @@
         if (ev.key === 'Enter' && !ev.shiftKey) {
             ev.preventDefault();
             formEnviar.requestSubmit();
+        }
+    });
+
+    btnRefresh?.addEventListener('click', async () => {
+        btnRefresh.disabled = true;
+        try {
+            await carregarHistorico(true);
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                conectarWs();
+            }
+        } finally {
+            btnRefresh.disabled = false;
         }
     });
 

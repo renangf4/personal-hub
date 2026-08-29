@@ -114,6 +114,10 @@ body.page-lan-dm .hub-main {
     padding: 0.75rem 1rem;
     border-bottom: 1px solid var(--bs-border-color);
     background: rgba(255, 255, 255, 0.02);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
 }
 
 .lan-chat__mensagens {

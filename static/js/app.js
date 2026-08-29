@@ -268,13 +268,19 @@
     async function atualizarLabelLimpar(btn, escopo) {
         const label = btn.querySelector('.btn-limpar-escopo-label, #btn-limpar-label');
         if (!label) return;
-        const isTemp = btn.classList.contains('btn-limpar-escopo') && escopo && escopo !== 'ai-chat';
+        const isTemp = btn.classList.contains('btn-limpar-escopo')
+            && escopo
+            && escopo !== 'ai-chat'
+            && escopo !== 'lan-dm';
         const padrao = isTemp ? 'Limpar dados temporarios' : (escopo ? 'Limpar' : 'Limpar');
         try {
             const resp = await fetch(infoUrl(escopo));
             const info = await resp.json();
             if (escopo === 'ai-chat') {
                 label.textContent = info.chats > 0 ? `Limpar (${info.chats})` : padrao;
+            } else if (escopo === 'lan-dm') {
+                const n = Number(info.mensagens) || 0;
+                label.textContent = n > 0 ? `Limpar (${n})` : padrao;
             } else if (info.arquivos > 0) {
                 label.textContent = `${padrao} (${formatBytes(info.bytes)})`;
             } else {
@@ -362,6 +368,17 @@
                     return;
                 }
                 if (!confirm(`Apagar ${info.chats} conversa(s)?`)) return;
+            } else if (escopo === 'lan-dm') {
+                const msgs = Number(info.mensagens) || 0;
+                const arqs = Number(info.arquivos) || 0;
+                if (!msgs && !arqs) {
+                    alert('Nenhuma mensagem para limpar.');
+                    return;
+                }
+                const partes = [];
+                if (msgs) partes.push(`${msgs} mensagem(ns)`);
+                if (arqs) partes.push(`${arqs} anexo(s)`);
+                if (!confirm(`Apagar ${partes.join(' e ')} do chat LAN?`)) return;
             } else {
                 if (!info.arquivos) {
                     alert('Nenhum dado temporario para limpar.');
@@ -378,6 +395,11 @@
                     window.aiRecarregarAposLimpar();
                 } else {
                     location.reload();
+                }
+            } else if (escopo === 'lan-dm') {
+                alert(`${data.mensagens || 0} mensagem(ns) removida(s).`);
+                if (typeof window.lanDmRecarregarAposLimpar === 'function') {
+                    window.lanDmRecarregarAposLimpar();
                 }
             } else {
                 limparPainelResultados();
