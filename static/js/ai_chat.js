@@ -116,11 +116,20 @@
     function rotuloContexto(c, sugerido) {
         const base = `${c.label} — ${c.nome}`;
         const ramTxt = c.ram ? ` (${c.ram})` : '';
-        if (c.tokens === sugerido) return `${base}${ramTxt} · sugerido`;
+        const modeloCabe = !(ultimoStatus && ultimoStatus.modelo_cabe === false);
+        if (c.tokens === sugerido && c.cabe !== false && modeloCabe) {
+            return `${base}${ramTxt} · sugerido`;
+        }
+        if (!modeloCabe || c.cabe === false) {
+            const modo = (ultimoStatus && ultimoStatus.memoria_modo) === 'gpu'
+                ? 'acima da VRAM/RAM'
+                : 'nao cabe';
+            return `${base}${ramTxt} · ${modo}`;
+        }
         if (contextoExcedeMemoria(c)) {
             const modo = (ultimoStatus && ultimoStatus.memoria_modo) === 'gpu'
                 ? 'acima da VRAM/RAM'
-                : 'acima da RAM livre';
+                : 'memoria apertada';
             return `${base}${ramTxt} · ${modo}`;
         }
         return `${base}${ramTxt}`;
@@ -178,9 +187,9 @@
         const modeloPesado = ultimoStatus && ultimoStatus.modelo_cabe === false;
         if (excede || modeloPesado) {
             ramLivreEl.classList.add('ai-chat__ram--aviso');
-            const avisoCtx = excede
-                ? '· contexto pode passar'
-                : '· modelo pesado p/ o servidor';
+            const avisoCtx = modeloPesado
+                ? '· modelo nao cabe'
+                : '· memoria apertada';
             ramLivreEl.innerHTML =
                 partes.join('') +
                 ` <span class="ai-chat__ram-aviso">${avisoCtx}</span>`;

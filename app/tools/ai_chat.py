@@ -681,7 +681,8 @@ def limitar_contexto(
             "msg": (
                 f"O modelo `{modelo}` precisa de ~{need_gb:.1f} GB livres no servidor "
                 f"(folga ~{folga_gb:.1f} GB){ja}, mas so ha {onde}. "
-                "Troque para um modelo menor (ex.: qwen2.5-coder:3b)."
+                "Feche abas e apps pesados, reduza o contexto ou troque para um modelo menor "
+                "(ex.: qwen2.5-coder:3b)."
             ),
         }
 
@@ -1096,8 +1097,8 @@ MODELOS_PRESET = [
         "parametros": "7B · leve",
         "quant_label": "Q4",
         "descricao": (
-            "Mesmo DeepHat em Q4 (~5 GB). Pentest, red team, payloads e recon — "
-            "feito para PCs com 8 GB de RAM."
+            "Mesmo DeepHat em Q4 (~5 GB). Pentest e red team — indicado com 8 GB de RAM "
+            "e poucos apps abertos (~6 GB livres)."
         ),
         "tamanho": "~4.7 GB",
         "icone": "bi-shield-lock",
@@ -1336,8 +1337,11 @@ async def verificar_status(modelo: str = MODELO_PADRAO) -> dict:
     info["contextos"] = _contextos_com_estimativa(
         modelo, tamanhos, info["ram"], info["vram"], carregado
     )
+    info["nenhum_contexto_cabe"] = not any(c.get("cabe") for c in info["contextos"])
     for c in info["contextos"]:
-        c["indicado"] = c["tokens"] == sugerido and c.get("cabe", False)
+        c["indicado"] = (
+            c["tokens"] == sugerido and c.get("cabe", False) and info["modelo_cabe"]
+        )
     info["pull"] = snapshot_pull()
     return info
 
