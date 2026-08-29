@@ -84,7 +84,6 @@ def init_db() -> None:
             "CREATE INDEX IF NOT EXISTS idx_lan_msg_dest ON lan_mensagens(destinatario, id)"
         )
         conn.commit()
-        _migrar_extras_legado(conn)
 
 
 def _import_ok(nome: str) -> bool:
@@ -96,29 +95,32 @@ def _import_ok(nome: str) -> bool:
         return False
 
 
-def _migrar_extras_legado(conn: sqlite3.Connection) -> None:
-    """Migra extras pip legados uma unica vez (nao reativa apos desinstalar)."""
-    if conn.execute(
-        "SELECT 1 FROM hub_settings WHERE chave = 'extras_migracao_legado'"
-    ).fetchone():
-        return
+def migrar_extras_legado() -> None:
+    """Upgrade one-shot (pre-Loja). Roda so no startup — nunca apos desinstalar."""
+    init_db()
+    with get_conn() as conn:
+        if conn.execute(
+            "SELECT 1 FROM hub_settings WHERE chave = 'extras_migracao_legado'"
+        ).fetchone():
+            return
 
-    total = conn.execute("SELECT COUNT(*) FROM extras_instalados").fetchone()[0]
-    if total == 0:
-        from .extras import EXTRAS, eh_browser_only
-        for slug, extra in EXTRAS.items():
-            if eh_browser_only(extra):
-                continue
-            if all(_import_ok(nome) for nome in extra["imports"]):
-                conn.execute(
-                    "INSERT OR IGNORE INTO extras_instalados (slug) VALUES (?)",
-                    (slug,),
-                )
+        total = conn.execute("SELECT COUNT(*) FROM extras_instalados").fetchone()[0]
+        if total == 0:
+            from .extras import EXTRAS, eh_browser_only
+            for slug, extra in EXTRAS.items():
+                if eh_browser_only(extra) or extra.get("somente_lan"):
+                    continue
+                if not extra.get("imports"):
+                    continue
+                if all(_import_ok(nome) for nome in extra["imports"]):
+                    conn.execute(
+                        "INSERT OR IGNORE INTO extras_instalados (slug) VALUES (?)",
+                        (slug,),
+                    )
 
-    conn.execute(
-        "INSERT OR REPLACE INTO hub_settings (chave, valor) VALUES ('extras_migracao_legado', '1')"
-    )
-    conn.commit()
+        conn.execute(
+            "INSERT OR REPLACE INTO hub_settings (chave, valor) VALUES ('extras_migracao_legado', '1')"
+        )
 
 
 def listar_extras_instalados() -> set[str]:

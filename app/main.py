@@ -113,6 +113,7 @@ def _wp_screenshot():
 def _startup() -> None:
     config.validate_or_raise()
     db.init_db()
+    db.migrar_extras_legado()
     UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
     OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
     migrar_sessoes_legado()
