@@ -449,16 +449,20 @@ def _inferir_gb_do_nome(modelo: str) -> float | None:
 def _tamanho_modelo_gb(modelo: str, tamanhos: dict[str, float] | None = None) -> float:
     """Estima GB em RAM ao carregar (tamanho real do Ollama ou preset)."""
     nome = (modelo or "").strip()
-    low = nome.lower()
     if tamanhos:
         if nome in tamanhos:
             return tamanhos[nome]
+        low = nome.lower()
         for k, v in tamanhos.items():
-            kl = k.lower()
-            if kl == low or kl.startswith(low + ":") or low.startswith(kl.split(":")[0]):
+            if k.lower() == low:
                 return v
-            if low.startswith(kl.rsplit(":", 1)[0] + ":") or kl.startswith(low.rsplit(":", 1)[0] + ":"):
-                return v
+        resolvido = _nome_instalado(nome, list(tamanhos.keys()))
+        if resolvido:
+            if resolvido in tamanhos:
+                return tamanhos[resolvido]
+            for k, v in tamanhos.items():
+                if k.lower() == resolvido.lower():
+                    return v
     preset = _preset_do_modelo(nome)
     if preset:
         gb = _parse_tamanho_gb(preset.get("tamanho"))
@@ -1149,20 +1153,57 @@ def _modelo_disponivel(modelo: str, modelos: list[str]) -> bool:
     return _nome_instalado(modelo, modelos) is not None
 
 
+def _split_modelo_ollama(nome: str) -> tuple[str, str | None]:
+    """Separa base e tag (tag apos o ultimo ':')."""
+    low = (nome or "").strip().lower()
+    if not low:
+        return "", None
+    if ":" not in low:
+        return low, None
+    base, tag = low.rsplit(":", 1)
+    return base, tag or None
+
+
 def _nome_instalado(modelo: str, modelos: list[str]) -> str | None:
     """Retorna o nome exato instalado no Ollama correspondente ao slug do preset."""
-    m = modelo.lower().strip()
-    if not m:
+    m_base, m_tag = _split_modelo_ollama(modelo)
+    if not m_base:
         return None
-    m_base = m.split(":", 1)[0]
     for nome in modelos:
-        n = nome.lower()
-        base = n.split(":", 1)[0]
-        if n == m or n.startswith(m + ":") or base == m or base == m_base:
+        n_base, n_tag = _split_modelo_ollama(nome)
+        if m_base != n_base:
+            continue
+        if m_tag is None:
+            if n_tag is None or n_tag == "latest":
+                return nome
+            continue
+        if n_tag is None and m_tag == "latest":
             return nome
-        if m_base in n and ("deephat" in m or "gguf" in m):
+        if n_tag == m_tag:
             return nome
     return None
+
+
+async def listar_modelos_instalados() -> list[str]:
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.get(f"{OLLAMA_BASE_URL}/api/tags")
+            resp.raise_for_status()
+            return [
+                m.get("name", "")
+                for m in resp.json().get("models", [])
+                if m.get("name")
+            ]
+    except Exception:
+        return []
+
+
+async def resolver_modelo_ollama(
+    modelo: str,
+    instalados: list[str] | None = None,
+) -> str | None:
+    nomes = instalados if instalados is not None else await listar_modelos_instalados()
+    return _nome_instalado(modelo, nomes)
 
 
 OLLAMA_DOWNLOAD = {
@@ -1311,7 +1352,10 @@ async def verificar_status(modelo: str = MODELO_PADRAO) -> dict:
             info["modelos"] = modelos
             info["modelo_disponivel"] = _modelo_disponivel(modelo, modelos)
             for preset in info["presets"]:
-                preset["baixado"] = _modelo_disponivel(preset["slug"], modelos)
+                nome = _nome_instalado(preset["slug"], modelos)
+                preset["baixado"] = nome is not None
+                if nome:
+                    preset["nome_ollama"] = nome
         tamanhos = await obter_tamanhos_ollama()
     except httpx.ConnectError:
         info["msg"] = "Ollama nao esta rodando em localhost:11434"
@@ -1811,6 +1855,19 @@ async def stream_chat(
     num_ctx: int = CONTEXT_PADRAO,
 ) -> AsyncIterator[dict]:
     """Streama a resposta do Ollama em chunks (dicts decodificados)."""
+    instalados = await listar_modelos_instalados()
+    nome_ollama = _nome_instalado(modelo, instalados)
+    if not nome_ollama:
+        yield {
+            "erro": True,
+            "msg": (
+                f"Modelo `{modelo}` nao esta instalado no Ollama. "
+                "Baixe de novo na loja ou, no servidor, rode: "
+                f"`ollama pull {modelo}`."
+            ),
+        }
+        return
+
     msgs = []
     if incluir_system:
         msgs.append({"role": "system", "content": _system_prompt_para(modelo)})
@@ -1819,7 +1876,7 @@ async def stream_chat(
     ram = obter_ram()
     vram = obter_vram()
     tamanhos = await obter_tamanhos_ollama()
-    carregado = await obter_modelo_carregado(modelo)
+    carregado = await obter_modelo_carregado(nome_ollama)
     ctx, aviso = limitar_contexto(
         num_ctx, ram, modelo, tamanhos, vram=vram, carregado=carregado
     )
@@ -1840,7 +1897,7 @@ async def stream_chat(
         yield aviso_hist
 
     payload = {
-        "model": modelo,
+        "model": nome_ollama,
         "messages": msgs,
         "stream": True,
         "keep_alive": "30s",
