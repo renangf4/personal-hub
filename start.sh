@@ -30,6 +30,12 @@ if [ "$HUB_MODE" = "lan" ]; then
         exit 1
     fi
     HUB_BIND="0.0.0.0"
+    if [ "$(uname -s)" = "Linux" ]; then
+        echo
+        echo "Linux + LAN: outros dispositivos precisam alcançar a porta ${HUB_PORT}."
+        echo "  Se o firewall bloquear: sudo ufw allow ${HUB_PORT}/tcp"
+        echo
+    fi
 else
     HUB_MODE=local
     export HUB_MODE
@@ -44,9 +50,28 @@ if [ ! -f "venv/bin/activate" ]; then
         echo "Criando ambiente virtual..."
     fi
     if command -v python3 >/dev/null 2>&1; then
-        python3 -m venv venv
+        if ! python3 -m venv venv; then
+            echo
+            echo "Nao foi possivel criar o venv."
+            if [ "$(uname -s)" = "Linux" ] && command -v apt >/dev/null 2>&1; then
+                pyver="$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")' 2>/dev/null || true)"
+                echo "No Ubuntu/Debian instale o modulo venv, por exemplo:"
+                if [ -n "$pyver" ]; then
+                    echo "  sudo apt install python${pyver}-venv"
+                else
+                    echo "  sudo apt install python3-venv"
+                fi
+            else
+                echo "Instale o Python 3 com suporte a venv (modulo ensurepip)."
+            fi
+            echo
+            exit 1
+        fi
     elif command -v python >/dev/null 2>&1; then
-        python -m venv venv
+        if ! python -m venv venv; then
+            echo "Nao foi possivel criar o venv. Verifique se o Python 3 inclui o modulo venv."
+            exit 1
+        fi
     else
         echo "Python 3 nao encontrado no PATH."
         exit 1

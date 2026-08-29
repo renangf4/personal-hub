@@ -11,7 +11,7 @@ import sys
 from typing import AsyncIterator
 
 from . import db, registry
-from .extras import EXTRAS
+from .extras import EXTRAS, eh_browser_only
 
 _lock = asyncio.Lock()
 _pkg_name_re = re.compile(r"^([A-Za-z0-9][A-Za-z0-9._-]*)")
@@ -103,7 +103,15 @@ async def instalar(slug: str) -> AsyncIterator[bytes]:
     async with _lock:
         yield (json.dumps({"tipo": "inicio", "acao": "instalar", "slug": slug}) + "\n").encode()
 
-        if _deps_ok(extra):
+        if eh_browser_only(extra):
+            yield (
+                json.dumps({
+                    "tipo": "log",
+                    "linha": "Ativando ferramenta (roda no navegador).",
+                })
+                + "\n"
+            ).encode()
+        elif _deps_ok(extra):
             yield (
                 json.dumps({
                     "tipo": "log",
@@ -182,6 +190,14 @@ async def desinstalar(slug: str) -> AsyncIterator[bytes]:
                 json.dumps({
                     "tipo": "log",
                     "linha": f"Pacotes removidos: {', '.join(para_remover)}",
+                })
+                + "\n"
+            ).encode()
+        elif eh_browser_only(extra):
+            yield (
+                json.dumps({
+                    "tipo": "log",
+                    "linha": "Ferramenta desativada (roda no navegador, sem pacotes pip).",
                 })
                 + "\n"
             ).encode()

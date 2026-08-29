@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import socket
+import sys
 
 
 def _mode() -> str:
@@ -97,6 +98,9 @@ def print_banner() -> None:
             print(f"   {url}")
         print(" Senha: HUB_PASSWORD (obrigatoria)")
         print(" Nao exponha na internet.")
+        if sys.platform == "linux":
+            print(f" Firewall: se nao conectar da rede, rode:")
+            print(f"   sudo ufw allow {PORT}/tcp")
     else:
         print(f" Personal Hub — modo local :{PORT}")
         print(f" Abra: http://localhost:{PORT}")

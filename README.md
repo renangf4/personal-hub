@@ -16,11 +16,13 @@ Instale sob demanda pela **Loja** (`/loja`):
 - **Cofre de senhas** — arquivo `.hubvault` criptografado no navegador; importar / exportar / excluir; senha-mestra nunca gravada
 - **Dados fake** — gera perfis editaveis (nome, e-mail, CPF...); colecao `.hubfake` criptografada; importar / exportar
 - **Authenticator 2FA** — codigos TOTP locais; vault `.hubtotp` criptografado pra backup em pendrive
+- **Mensagem direta LAN** — chat em tempo real na rede (modo LAN): texto e arquivos entre PCs; canal geral ou DM
 
 ## Requisitos
 
 - Windows, Linux ou macOS
 - Python 3.10+ no PATH
+- **Linux (Ubuntu/Debian/WSL):** pacote `python3-venv` (ou `python3.12-venv`, conforme a versao) — sem ele o `start.sh` nao cria o ambiente virtual na primeira execucao
 - [Ollama](https://ollama.com) (opcional; so para o Assistente de IA)
 - Conta [Shodan](https://account.shodan.io/) (opcional; so se for usar a consulta Shodan)
 
@@ -66,6 +68,13 @@ chmod +x start.sh
 ./start.sh
 ```
 
+Na primeira execucao o script cria o `venv` e instala o nucleo. Em Ubuntu/Debian, se falhar:
+
+```bash
+sudo apt install python3-venv
+# ou: sudo apt install python3.12-venv
+```
+
 Modo LAN:
 
 ```bash
@@ -76,7 +85,7 @@ Modo LAN:
 
 - **Porta 7777** (nao conflita com Apache/XAMPP, MySQL, Docker padrao).
 - **Modo local** (padrao): so `127.0.0.1`, sem login.
-- **Modo LAN**: bind `0.0.0.0` + senha compartilhada (`HUB_PASSWORD` / argumento).
+- **Modo LAN**: bind `0.0.0.0` + senha compartilhada (`HUB_PASSWORD` / argumento); no Linux pode precisar `sudo ufw allow 7777/tcp`.
 - **Loja** instala e remove pacotes opcionais sem sujar a raiz do projeto; mostra deps, dados persistentes e o caminho em `storage/`.
 - **Limpeza**: temporarios (video/imagem/PDF) separado de **Destruir tudo** (inclui vaults, chats, senhas e keys).
 - **Storage** (Imagem / Video / Screenshot WP): browser com cards, preview, apagar um ou todos.

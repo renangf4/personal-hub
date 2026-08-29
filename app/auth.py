@@ -6,7 +6,7 @@ import hashlib
 import hmac
 import secrets
 
-from fastapi import Request
+from fastapi import Request, WebSocket
 from fastapi.responses import RedirectResponse, Response
 
 from . import config
@@ -31,6 +31,15 @@ def autenticado(request: Request) -> bool:
     if not config.AUTH_REQUIRED:
         return True
     token = request.cookies.get(COOKIE_NAME) or ""
+    if not token:
+        return False
+    return hmac.compare_digest(token, _session_token())
+
+
+def autenticado_ws(websocket: WebSocket) -> bool:
+    if not config.AUTH_REQUIRED:
+        return True
+    token = websocket.cookies.get(COOKIE_NAME) or ""
     if not token:
         return False
     return hmac.compare_digest(token, _session_token())

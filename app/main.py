@@ -1,12 +1,13 @@
 import asyncio
 import json
 import shutil
+import sys
 import time
 import uuid
 from pathlib import Path
 from urllib.parse import urlparse
 
-from fastapi import Body, FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi import Body, FastAPI, File, Form, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -49,9 +50,11 @@ def static_url(path: str) -> str:
 
 templates.env.globals.update({
     "hub_mode": config.MODE,
+    "hub_port": config.PORT,
     "hub_bind_label": config.BIND_LABEL,
     "hub_auth_required": config.AUTH_REQUIRED,
     "hub_is_lan": config.IS_LAN,
+    "hub_is_linux": sys.platform == "linux",
     "static_url": static_url,
 })
 
@@ -322,6 +325,13 @@ def tool_page(request: Request, slug: str):
     if slug == "totp-auth":
         return templates.TemplateResponse(
             "totp_auth.html",
+            {"request": request, "tool": tool},
+        )
+
+    if slug == "lan-dm":
+        _lan_dm()
+        return templates.TemplateResponse(
+            "lan_dm.html",
             {"request": request, "tool": tool},
         )
 
@@ -977,6 +987,15 @@ def _rede():
     return mod
 
 
+def _lan_dm():
+    if not config.IS_LAN:
+        raise HTTPException(status_code=404, detail="Mensagem direta LAN so funciona em modo LAN")
+    mod = registry.modulo("lan_dm")
+    if mod is None:
+        raise HTTPException(status_code=404, detail="Mensagem direta LAN nao instalada. Abra a Loja.")
+    return mod
+
+
 @app.get("/api/rede/meu-ip")
 async def api_rede_meu_ip():
     rede = _rede()
@@ -1114,3 +1133,132 @@ def api_rede_origem(payload: dict = Body(...)):
 def api_rede_osint(payload: dict = Body(...)):
     rede = _rede()
     return _rede_call(rede.consultar_osint, payload.get("alvo") or "")
+
+
+def _exigir_lan_dm():
+    lan = _lan_dm()
+    if not config.IS_LAN:
+        raise HTTPException(status_code=404, detail="Disponivel apenas em modo LAN")
+    return lan
+
+
+@app.get("/api/lan-dm/mensagens")
+def api_lan_dm_mensagens(
+    apelido: str,
+    destinatario: str = "",
+    desde_id: int = 0,
+):
+    lan = _exigir_lan_dm()
+    apelido = lan.normalizar_apelido(apelido)
+    if not lan.apelido_valido(apelido):
+        raise HTTPException(status_code=400, detail="Apelido invalido")
+    dest_db = lan.destino_db(destinatario)
+    rows = db.listar_lan_mensagens(apelido, dest_db, desde_id=desde_id)
+    return {
+        "ok": True,
+        "mensagens": [lan.mensagem_para_dict(r) for r in rows],
+    }
+
+
+@app.post("/api/lan-dm/mensagens")
+async def api_lan_dm_enviar(
+    apelido: str = Form(...),
+    destinatario: str = Form(""),
+    conteudo: str = Form(""),
+    arquivo: UploadFile | None = File(None),
+):
+    lan = _exigir_lan_dm()
+    apelido = lan.normalizar_apelido(apelido)
+    if not lan.apelido_valido(apelido):
+        raise HTTPException(status_code=400, detail="Apelido invalido")
+
+    texto = (conteudo or "").strip()
+    if len(texto) > lan.MAX_TEXTO:
+        raise HTTPException(status_code=400, detail="Texto longo demais")
+
+    dest_db = lan.destino_db(destinatario)
+    if dest_db and not lan.apelido_valido(dest_db):
+        raise HTTPException(status_code=400, detail="Destinatario invalido")
+    if dest_db == apelido:
+        raise HTTPException(status_code=400, detail="Nao envie mensagem para voce mesmo")
+
+    arquivo_nome = None
+    arquivo_path = None
+    arquivo_bytes = 0
+    if arquivo and arquivo.filename:
+        dados = await arquivo.read()
+        if dados:
+            try:
+                arquivo_path, arquivo_bytes = lan.salvar_arquivo(arquivo.filename, dados)
+                arquivo_nome = Path(arquivo.filename).name
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=str(e)) from e
+
+    if not texto and not arquivo_path:
+        raise HTTPException(status_code=400, detail="Envie texto ou arquivo")
+
+    row = db.criar_lan_mensagem(
+        apelido,
+        dest_db,
+        texto,
+        arquivo_nome,
+        arquivo_path,
+        arquivo_bytes,
+    )
+    msg = lan.mensagem_para_dict(row)
+    await lan.hub.enviar_mensagem(msg)
+    return {"ok": True, "mensagem": msg}
+
+
+@app.get("/api/lan-dm/arquivos/{msg_id}")
+def api_lan_dm_arquivo(msg_id: int):
+    lan = _exigir_lan_dm()
+    caminho = lan.caminho_arquivo(msg_id)
+    if not caminho:
+        raise HTTPException(status_code=404, detail="Arquivo nao encontrado")
+    row = db.obter_lan_mensagem(msg_id)
+    nome = (row or {}).get("arquivo_nome") or caminho.name
+    return FileResponse(caminho, filename=nome)
+
+
+@app.websocket("/ws/lan-dm")
+async def ws_lan_dm(websocket: WebSocket):
+    if not config.IS_LAN:
+        await websocket.close(code=4404)
+        return
+    if registry.modulo("lan_dm") is None:
+        await websocket.close(code=4404)
+        return
+    if not auth.autenticado_ws(websocket):
+        await websocket.close(code=4401)
+        return
+
+    from .tools import lan_dm as lan
+
+    apelido = ""
+    try:
+        raw = await websocket.receive_text()
+        try:
+            payload = json.loads(raw)
+        except json.JSONDecodeError:
+            await websocket.close(code=4400)
+            return
+        if payload.get("tipo") != "join":
+            await websocket.close(code=4400)
+            return
+        ok = await lan.hub.connect(websocket, apelido)
+        if not ok:
+            return
+
+        await websocket.send_text(
+            json.dumps({"tipo": "joined", "apelido": apelido, "online": lan.hub.online()})
+        )
+
+        while True:
+            msg = await websocket.receive_text()
+            if msg == "ping":
+                await websocket.send_text(json.dumps({"tipo": "pong"}))
+    except WebSocketDisconnect:
+        pass
+    finally:
+        await lan.hub.disconnect(websocket)

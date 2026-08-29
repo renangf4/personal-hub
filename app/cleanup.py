@@ -17,6 +17,7 @@ ESCOPO_POR_SLUG = {
 
 ESCOPOS_ARQUIVO = ("video", "imagem", "wp-screenshot", "unlock-pdf")
 ESCOPO_AI = "ai-chat"
+ESCOPO_LAN_DM = "lan-dm"
 ESCOPO_COFRE = "cofre-senhas"
 ESCOPO_FAKE = "fake-data"
 ESCOPO_TOTP = "totp-auth"
@@ -166,6 +167,17 @@ def info_armazenamento(escopo: str | None = None) -> dict:
         msgs = sum(c.get("total_mensagens", 0) for c in chats)
         return {"arquivos": len(chats), "bytes": 0, "chats": len(chats), "mensagens": msgs}
 
+    if escopo == ESCOPO_LAN_DM:
+        from . import db
+        from .tools.lan_dm import ARQUIVOS_DIR
+        info = db.info_lan_dm()
+        arquivos = _info_pastas(ARQUIVOS_DIR)
+        return {
+            "arquivos": arquivos["arquivos"],
+            "bytes": arquivos["bytes"],
+            "mensagens": info["mensagens"],
+        }
+
     if escopo in ESCOPOS_VAULT:
         from . import vault_store
         return vault_store.info_bytes(ESCOPOS_VAULT[escopo])
@@ -211,18 +223,33 @@ def executar_limpeza(escopo: str | None = None) -> dict:
         chats = db.limpar_chats()
         senhas = db.limpar_senhas_pdf()
         keys = db.limpar_settings_api()
+        lan = db.limpar_lan_dm()
+        from .tools.lan_dm import ARQUIVOS_DIR
+        a_lan, b_lan = _limpar_pasta(ARQUIVOS_DIR)
         return {
-            "arquivos": arquivos,
-            "bytes": bytes_total,
+            "arquivos": arquivos + a_lan,
+            "bytes": bytes_total + b_lan + lan["bytes"],
             "chats": chats,
             "senhas": senhas,
             "keys": keys,
+            "mensagens_lan": lan["mensagens"],
         }
 
     if escopo == ESCOPO_AI:
         from . import db
         chats = db.limpar_chats()
         return {"arquivos": 0, "bytes": 0, "chats": chats}
+
+    if escopo == ESCOPO_LAN_DM:
+        from . import db
+        from .tools.lan_dm import ARQUIVOS_DIR
+        info = db.limpar_lan_dm()
+        a, b = _limpar_pasta(ARQUIVOS_DIR)
+        return {
+            "arquivos": a,
+            "bytes": b + info["bytes"],
+            "mensagens": info["mensagens"],
+        }
 
     if escopo in ESCOPOS_VAULT:
         # Vaults so excluem um a um na propria ferramenta

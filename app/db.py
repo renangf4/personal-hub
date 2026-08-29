@@ -66,6 +66,23 @@ def init_db() -> None:
             )
             """
         )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS lan_mensagens (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                remetente TEXT NOT NULL,
+                destinatario TEXT,
+                conteudo TEXT NOT NULL DEFAULT '',
+                arquivo_nome TEXT,
+                arquivo_path TEXT,
+                arquivo_bytes INTEGER NOT NULL DEFAULT 0,
+                criado_em TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+            """
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_lan_msg_dest ON lan_mensagens(destinatario, id)"
+        )
         conn.commit()
         _migrar_extras_legado(conn)
 
@@ -80,17 +97,27 @@ def _import_ok(nome: str) -> bool:
 
 
 def _migrar_extras_legado(conn: sqlite3.Connection) -> None:
-    """Se ja havia pacotes instalados antes do controle por Loja, marca os extras."""
-    total = conn.execute("SELECT COUNT(*) FROM extras_instalados").fetchone()[0]
-    if total:
+    """Migra extras pip legados uma unica vez (nao reativa apos desinstalar)."""
+    if conn.execute(
+        "SELECT 1 FROM hub_settings WHERE chave = 'extras_migracao_legado'"
+    ).fetchone():
         return
-    from .extras import EXTRAS
-    for slug, extra in EXTRAS.items():
-        if all(_import_ok(nome) for nome in extra["imports"]):
-            conn.execute(
-                "INSERT OR IGNORE INTO extras_instalados (slug) VALUES (?)",
-                (slug,),
-            )
+
+    total = conn.execute("SELECT COUNT(*) FROM extras_instalados").fetchone()[0]
+    if total == 0:
+        from .extras import EXTRAS, eh_browser_only
+        for slug, extra in EXTRAS.items():
+            if eh_browser_only(extra):
+                continue
+            if all(_import_ok(nome) for nome in extra["imports"]):
+                conn.execute(
+                    "INSERT OR IGNORE INTO extras_instalados (slug) VALUES (?)",
+                    (slug,),
+                )
+
+    conn.execute(
+        "INSERT OR REPLACE INTO hub_settings (chave, valor) VALUES ('extras_migracao_legado', '1')"
+    )
     conn.commit()
 
 
@@ -330,3 +357,123 @@ def listar_mensagens(chat_id: int) -> list[dict]:
             (chat_id,),
         ).fetchall()
         return [dict(r) for r in rows]
+
+
+def criar_lan_mensagem(
+    remetente: str,
+    destinatario: str | None,
+    conteudo: str = "",
+    arquivo_nome: str | None = None,
+    arquivo_path: str | None = None,
+    arquivo_bytes: int = 0,
+) -> dict:
+    init_db()
+    with get_conn() as conn:
+        cur = conn.execute(
+            """
+            INSERT INTO lan_mensagens
+                (remetente, destinatario, conteudo, arquivo_nome, arquivo_path, arquivo_bytes)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                remetente,
+                destinatario,
+                conteudo or "",
+                arquivo_nome,
+                arquivo_path,
+                int(arquivo_bytes or 0),
+            ),
+        )
+        row = conn.execute(
+            """
+            SELECT id, remetente, destinatario, conteudo, arquivo_nome, arquivo_path,
+                   arquivo_bytes, criado_em
+            FROM lan_mensagens WHERE id = ?
+            """,
+            (cur.lastrowid,),
+        ).fetchone()
+        return dict(row)
+
+
+def obter_lan_mensagem(msg_id: int) -> dict | None:
+    init_db()
+    with get_conn() as conn:
+        row = conn.execute(
+            """
+            SELECT id, remetente, destinatario, conteudo, arquivo_nome, arquivo_path,
+                   arquivo_bytes, criado_em
+            FROM lan_mensagens WHERE id = ?
+            """,
+            (msg_id,),
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def listar_lan_mensagens(
+    apelido: str,
+    destinatario: str | None,
+    desde_id: int = 0,
+    limite: int = 200,
+) -> list[dict]:
+    init_db()
+    limite = max(1, min(int(limite or 200), 500))
+    desde_id = max(0, int(desde_id or 0))
+    with get_conn() as conn:
+        if destinatario:
+            rows = conn.execute(
+                """
+                SELECT id, remetente, destinatario, conteudo, arquivo_nome, arquivo_path,
+                       arquivo_bytes, criado_em
+                FROM lan_mensagens
+                WHERE id > ?
+                  AND (
+                    (remetente = ? AND destinatario = ?)
+                    OR (remetente = ? AND destinatario = ?)
+                  )
+                ORDER BY id ASC
+                LIMIT ?
+                """,
+                (desde_id, apelido, destinatario, destinatario, apelido, limite),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                """
+                SELECT id, remetente, destinatario, conteudo, arquivo_nome, arquivo_path,
+                       arquivo_bytes, criado_em
+                FROM lan_mensagens
+                WHERE id > ? AND destinatario IS NULL
+                ORDER BY id ASC
+                LIMIT ?
+                """,
+                (desde_id, limite),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def info_lan_dm() -> dict:
+    init_db()
+    with get_conn() as conn:
+        row = conn.execute(
+            """
+            SELECT COUNT(*) AS mensagens,
+                   COALESCE(SUM(arquivo_bytes), 0) AS bytes
+            FROM lan_mensagens
+            """
+        ).fetchone()
+        return {
+            "mensagens": int(row["mensagens"] or 0),
+            "bytes": int(row["bytes"] or 0),
+        }
+
+
+def limpar_lan_dm() -> dict:
+    init_db()
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT COUNT(*) AS n, COALESCE(SUM(arquivo_bytes), 0) AS b FROM lan_mensagens"
+        ).fetchone()
+        conn.execute("DELETE FROM lan_mensagens")
+        return {
+            "mensagens": int(row["n"] or 0),
+            "bytes": int(row["b"] or 0),
+        }

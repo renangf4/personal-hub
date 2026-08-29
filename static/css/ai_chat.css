@@ -30,6 +30,17 @@ body.page-ai-chat #ai-gate {
     margin-bottom: 1rem !important;
 }
 
+#ai-pull-wrap {
+    position: sticky;
+    top: 0;
+    z-index: 3;
+    margin: 0 0 1rem;
+    padding: 0.75rem 0.85rem;
+    background: var(--hub-surface, var(--bs-body-bg));
+    border: 1px solid var(--hub-border, var(--bs-border-color));
+    border-radius: 0.65rem;
+}
+
 .ai-chat__sidebar,
 .ai-chat__main {
     background: var(--hub-surface, rgba(22, 27, 36, 0.72));

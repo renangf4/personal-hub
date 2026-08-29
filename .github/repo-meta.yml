@@ -4,7 +4,7 @@
 
 description: >-
   Hub local de utilitarios (FastAPI): midia, PDF, IA, DNS/Whois, AES-GCM,
-  cofre, dados fake e authenticator TOTP — so em localhost.
+  cofre, dados fake, TOTP e chat LAN — localhost ou rede Wi-Fi com senha.
 
 homepage: https://github.com/renangf4/personal-hub
 
@@ -25,3 +25,4 @@ topics:
   - fake-data
   - web-crypto
   - bootstrap
+  - websocket

@@ -13,6 +13,7 @@
     const pullPercent = document.getElementById('ai-pull-percent');
     const pullStatus = document.getElementById('ai-pull-status');
     const pullDetalhe = document.getElementById('ai-pull-detalhe');
+    let pullSlugLocal = '';
 
     const chat = document.getElementById('ai-chat');
     const listaChats = document.getElementById('ai-lista-chats');
@@ -236,6 +237,7 @@
                     `Nenhum modelo foi baixado ainda. Selecione abaixo qual instalar.`,
                     { presets: true, presetsData: data.presets }
                 );
+                aplicarPullDoStatus(data);
                 return false;
             }
 
@@ -251,7 +253,15 @@
                     sugerido: data.contexto_sugerido,
                     ajustarSelect: true,
                 });
+                aplicarPullDoStatus(data);
                 return true;
+            }
+            if (aplicarPullDoStatus(data)) {
+                mostrarGate('Escolha um modelo',
+                    `Download em andamento. Aguarde terminar.`,
+                    { presets: true, presetsData: data.presets }
+                );
+                return false;
             }
             esconderGate();
             atualizarSeletorModelo(data.presets);
@@ -294,6 +304,7 @@
 
         const mapaFoco = {};
         focos.forEach(f => { mapaFoco[f.id] = f; });
+        const puxando = slugPuxando();
 
         let html = '';
         for (const focoId of ordem) {
@@ -328,9 +339,13 @@
                                                        <i class="bi bi-trash3"></i> Remover
                                                    </button>` : ''}
                                                </div>`
-                                            : `<button class="btn btn-sm btn-primary w-100" data-baixar="${escapeHtml(p.slug)}">
-                                                   <i class="bi bi-download me-1"></i> Baixar
-                                               </button>`
+                                            : (puxando === p.slug
+                                                ? `<button class="btn btn-sm btn-primary w-100" data-baixar="${escapeHtml(p.slug)}" disabled>
+                                                       <span class="spinner-border spinner-border-sm me-1"></span> Baixando...
+                                                   </button>`
+                                                : `<button class="btn btn-sm btn-primary w-100" data-baixar="${escapeHtml(p.slug)}" ${puxando ? 'disabled' : ''}>
+                                                       <i class="bi bi-download me-1"></i> Baixar
+                                                   </button>`)
                                         }
                                     </div>
                                 </div>
@@ -553,6 +568,29 @@
         }
     }
 
+    function slugPuxando() {
+        const p = ultimoStatus && ultimoStatus.pull;
+        if (p && p.ativo && p.modelo) return p.modelo;
+        return pullSlugLocal || '';
+    }
+
+    function aplicarPullDoStatus(st) {
+        const p = (st && st.pull) || {};
+        if (p.ativo) {
+            pullSlugLocal = p.modelo || pullSlugLocal;
+            prepararPullUI(p.status || `Baixando ${p.modelo || ''}...`);
+            atualizarProgresso(p);
+            if (presetsWrap && !presetsWrap.classList.contains('d-none')) {
+                renderPresets((st && st.presets) || [], !!modoGerenciar);
+            }
+            return true;
+        }
+        if (p.erro && pullSlugLocal) {
+            exibirErro(p.erro);
+        }
+        return false;
+    }
+
     function prepararPullUI(textoInicial) {
         pullWrap.classList.remove('d-none');
         gateErro.classList.add('d-none');
@@ -560,6 +598,7 @@
         pullPercent.textContent = '0%';
         pullStatus.textContent = textoInicial;
         pullDetalhe.textContent = '';
+        try { pullWrap.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } catch (_) {}
     }
 
     function exibirErro(msg) {
@@ -568,8 +607,16 @@
     }
 
     async function baixarModelo(slug, btn) {
-        if (btn) btn.disabled = true;
+        if (slugPuxando() && slugPuxando() !== slug) return;
+        pullSlugLocal = slug;
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Baixando...';
+        }
         prepararPullUI(`Baixando ${slug}...`);
+        if (ultimoStatus && ultimoStatus.presets) {
+            renderPresets(ultimoStatus.presets, !!modoGerenciar);
+        }
         try {
             await consumirStream('/api/ai/pull', {
                 headers: { 'Content-Type': 'application/json' },
@@ -583,10 +630,15 @@
             pullBar.style.width = '100%';
             pullPercent.textContent = '100%';
             localStorage.setItem(LS_MODELO, slug);
+            pullSlugLocal = '';
             setTimeout(verificarStatus, 600);
         } catch (err) {
             exibirErro(err.message);
+            pullSlugLocal = '';
             if (btn) btn.disabled = false;
+            if (ultimoStatus && ultimoStatus.presets) {
+                renderPresets(ultimoStatus.presets, !!modoGerenciar);
+            }
         }
     }
 
@@ -1280,6 +1332,10 @@
                     if (data.contextos) ultimoStatus.contextos = data.contextos;
                     if (data.ram_folga_bytes) ultimoStatus.ram_folga_bytes = data.ram_folga_bytes;
                     if (data.vram_folga_bytes) ultimoStatus.vram_folga_bytes = data.vram_folga_bytes;
+                    if (data.pull) ultimoStatus.pull = data.pull;
+                }
+                if (data.pull && data.pull.ativo) {
+                    aplicarPullDoStatus(data);
                 }
                 // Atualiza labels/aviso sem forcar troca do select
                 if (ctxSelect && !ctxSelect.classList.contains('d-none') && data.contextos) {

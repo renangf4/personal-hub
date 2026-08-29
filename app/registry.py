@@ -7,6 +7,7 @@ import sys
 from types import ModuleType
 from typing import Any
 
+from . import config
 from .extras import EXTRAS, FORMATOS_IMAGEM, FORMATOS_VIDEO, TOOL_META
 
 _modulos: dict[str, ModuleType | None] = {}
@@ -25,6 +26,8 @@ def _import_ok(nome: str) -> bool:
 def extra_instalado(slug: str) -> bool:
     extra = EXTRAS.get(slug)
     if not extra:
+        return False
+    if extra.get("somente_lan") and not config.IS_LAN:
         return False
     from . import db
     if slug not in db.listar_extras_instalados():
@@ -169,6 +172,7 @@ def home_itens() -> list[dict]:
         "cofre-senhas",
         "fake-data",
         "totp-auth",
+        "lan-dm",
     ):
         if slug in TOOLS:
             itens.append({**TOOLS[slug], "href": f"/tool/{slug}", "escopo": slug})
@@ -216,6 +220,12 @@ def home_itens() -> list[dict]:
             item["tem_dados"] = keys > 0
             item["storage_title"] = "API keys (Shodan, AbuseIPDB, VirusTotal)"
             item["mostra_storage"] = True
+        elif escopo == "lan-dm":
+            msgs = int(info.get("mensagens") or 0)
+            item["dados_label"] = f"{msgs} mensagem(ns)" if msgs else "0 mensagens"
+            item["tem_dados"] = msgs > 0
+            item["storage_title"] = "Mensagens e anexos da LAN"
+            item["mostra_storage"] = True
         else:
             # gcm-crypto — nada em disco
             item["dados_label"] = ""
@@ -254,6 +264,8 @@ def listar_loja() -> list[dict[str, Any]]:
 
     itens = []
     for slug, extra in EXTRAS.items():
+        if extra.get("somente_lan") and not config.IS_LAN:
+            continue
         escopo = extra.get("escopo_dados", slug)
         info = info_armazenamento(escopo)
         persist = extra.get("persistencia") or {
@@ -270,6 +282,10 @@ def listar_loja() -> list[dict[str, Any]]:
         elif escopo == "ai-chat":
             dados_resumo = f"{chats} conversa(s)" if chats else "Vazio"
             tem_dados = chats > 0
+        elif escopo == "lan-dm":
+            msgs = int(info.get("mensagens") or 0)
+            dados_resumo = f"{msgs} mensagem(ns)" if msgs else "Vazio"
+            tem_dados = msgs > 0 or arquivos > 0
         elif arquivos > 0:
             dados_resumo = f"{arquivos} arquivo(s) · {_fmt_bytes(bytes_total)}"
             tem_dados = True

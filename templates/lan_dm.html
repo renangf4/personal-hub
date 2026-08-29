@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+
+{% block title %}{{ tool.nome }} — Personal Hub{% endblock %}
+{% block body_class %}page-lan-dm{% endblock %}
+
+{% block extra_css %}
+<link href="{{ static_url('css/lan_dm.css') }}" rel="stylesheet">
+{% endblock %}
+
+{% block content %}
+<div id="lan-gate" class="card hub-card lan-gate">
+    <div class="card-body p-4">
+        <div class="text-center mb-4">
+            <span class="tool-card__icon tool-card__icon--lg mx-auto mb-3">
+                <i class="bi {{ tool.icone }}"></i>
+            </span>
+            <h2 class="h5 mb-1">Entrar no chat LAN</h2>
+            <p class="hub-subtitle mb-0">Escolha um apelido para este PC. Outros na rede veem voce online.</p>
+        </div>
+        <form id="lan-form-apelido" class="mx-auto" style="max-width: 22rem;">
+            <label for="lan-apelido-input" class="form-label">Apelido</label>
+            <input type="text" id="lan-apelido-input" class="form-control mb-3" maxlength="40"
+                   placeholder="Ex.: Notebook, PC-Sala" autocomplete="nickname" required>
+            <button type="submit" class="btn btn-primary w-100">
+                <i class="bi bi-box-arrow-in-right me-1"></i> Entrar
+            </button>
+        </form>
+        <div id="lan-gate-erro" class="alert alert-danger mt-3 d-none small mb-0"></div>
+    </div>
+</div>
+
+<div id="lan-chat" class="lan-chat d-none">
+    <aside class="lan-chat__sidebar">
+        <div class="lan-chat__sidebar-topo">
+            <a href="/" class="btn btn-outline-secondary page-head__back" title="Voltar">
+                <i class="bi bi-chevron-left"></i>
+            </a>
+            <div class="min-w-0">
+                <h1 class="h6 mb-0 fw-semibold">
+                    <i class="bi {{ tool.icone }} text-primary me-1"></i>{{ tool.nome }}
+                </h1>
+                <p class="small text-secondary mb-0">Voce: <strong id="lan-meu-apelido"></strong></p>
+            </div>
+        </div>
+
+        <div class="lan-chat__sidebar-meta">
+            <span id="lan-status" class="badge text-bg-secondary">
+                <i class="bi bi-circle-fill me-1"></i> conectando...
+            </span>
+            <button type="button" class="btn btn-sm btn-limpar btn-limpar-escopo" data-escopo="lan-dm" title="Apagar historico e anexos">
+                <i class="bi bi-trash3"></i> <span class="btn-limpar-escopo-label">Limpar</span>
+            </button>
+        </div>
+
+        <div class="lan-chat__secao-titulo">Canais</div>
+        <button type="button" class="lan-chat__canal lan-chat__canal--ativo" data-canal="__geral__">
+            <i class="bi bi-people me-2"></i> Geral (todos)
+        </button>
+
+        <div class="lan-chat__secao-titulo mt-2">Online na rede</div>
+        <div id="lan-online" class="lan-chat__online">
+            <div class="text-secondary small py-2">Ninguem online ainda.</div>
+        </div>
+    </aside>
+
+    <section class="lan-chat__main">
+        <header class="lan-chat__header">
+            <div>
+                <h2 class="h6 mb-0" id="lan-canal-titulo">Geral</h2>
+                <p class="small text-secondary mb-0" id="lan-canal-sub">Mensagens visiveis para todos na LAN</p>
+            </div>
+        </header>
+
+        <div id="lan-mensagens" class="lan-chat__mensagens" aria-live="polite"></div>
+
+        <form id="lan-form-enviar" class="lan-chat__composer">
+            <input type="file" id="lan-arquivo" class="d-none" multiple>
+            <div id="lan-anexos" class="lan-chat__anexos d-none"></div>
+            <div class="lan-chat__composer-row">
+                <button type="button" id="lan-btn-anexo" class="btn btn-outline-secondary" title="Anexar arquivo">
+                    <i class="bi bi-paperclip"></i>
+                </button>
+                <textarea id="lan-texto" class="form-control" rows="1" maxlength="8000"
+                          placeholder="Mensagem para a LAN..."></textarea>
+                <button type="submit" id="lan-btn-enviar" class="btn btn-primary" title="Enviar">
+                    <i class="bi bi-send"></i>
+                </button>
+            </div>
+        </form>
+    </section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ static_url('js/lan_dm.js') }}"></script>
+{% endblock %}

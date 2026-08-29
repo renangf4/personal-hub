@@ -26,6 +26,28 @@ VRAM_FOLGA_BYTES = int(0.5 * 1024 * 1024 * 1024)
 # Reserva de tokens pra resposta do modelo dentro do num_ctx.
 CTX_RESERVA_RESPOSTA = 0.22
 
+_pull_lock = asyncio.Lock()
+_pull_task: asyncio.Task | None = None
+_pull_state: dict = {
+    "ativo": False,
+    "modelo": "",
+    "status": "",
+    "completed": 0,
+    "total": 0,
+    "erro": None,
+}
+
+
+def snapshot_pull() -> dict:
+    return {
+        "ativo": bool(_pull_state["ativo"]),
+        "modelo": _pull_state["modelo"] or "",
+        "status": _pull_state["status"] or "",
+        "completed": int(_pull_state["completed"] or 0),
+        "total": int(_pull_state["total"] or 0),
+        "erro": _pull_state["erro"],
+    }
+
 
 def obter_ram() -> dict | None:
     """Memoria fisica: total / disponivel / usada (bytes). Sem deps extras."""
@@ -720,7 +742,7 @@ MODELOS_PRESET = [
         "slug": "DeepHat/DeepHat-V1-7B",
         "nome": "DeepHat",
         "descricao": "Cybersecurity / red team (deephat.ai). Nao censurado.",
-        "tamanho": "~4.7 GB",
+        "tamanho": "~14 GB",
         "icone": "bi-shield-lock",
         "foco": "seguranca",
     },
@@ -988,6 +1010,7 @@ async def verificar_status(modelo: str = MODELO_PADRAO) -> dict:
     )
     for c in info["contextos"]:
         c["indicado"] = c["tokens"] == sugerido
+    info["pull"] = snapshot_pull()
     return info
 
 
@@ -1249,48 +1272,114 @@ async def stream_install_ollama() -> AsyncIterator[bytes]:
         yield enviar({"erro": True, "status": f"Erro inesperado: {e}"})
 
 
-async def stream_pull(modelo: str = MODELO_PADRAO) -> AsyncIterator[bytes]:
-    """Faz pull do modelo retransmitindo os eventos de progresso como ndjson."""
-    payload = {"name": modelo, "stream": True}
+def _evento_pull(extra: dict | None = None) -> bytes:
+    snap = snapshot_pull()
+    payload = {
+        "status": snap["status"],
+        "completed": snap["completed"],
+        "total": snap["total"],
+        "modelo": snap["modelo"],
+    }
+    if snap["erro"]:
+        payload["erro"] = True
+        payload["status"] = snap["erro"]
+    if extra:
+        payload.update(extra)
+    return (json.dumps(payload) + "\n").encode("utf-8")
+
+
+async def _rodar_pull(modelo: str) -> None:
+    _pull_state.update(
+        {
+            "ativo": True,
+            "modelo": modelo,
+            "status": "Baixando...",
+            "completed": 0,
+            "total": 0,
+            "erro": None,
+        }
+    )
     try:
         async with httpx.AsyncClient(timeout=None) as client:
             async with client.stream(
                 "POST",
                 f"{OLLAMA_BASE_URL}/api/pull",
-                json=payload,
+                json={"name": modelo, "stream": True},
             ) as resp:
                 if resp.status_code != 200:
                     erro = await resp.aread()
-                    yield (
-                        json.dumps(
-                            {
-                                "erro": True,
-                                "status": f"HTTP {resp.status_code}",
-                                "detalhe": erro.decode("utf-8", errors="ignore"),
-                            }
-                        )
-                        + "\n"
-                    ).encode("utf-8")
+                    _pull_state["erro"] = (
+                        f"HTTP {resp.status_code}: "
+                        f"{erro.decode('utf-8', errors='ignore')[:400]}"
+                    )
                     return
-
                 async for linha in resp.aiter_lines():
                     if not linha:
                         continue
-                    yield (linha + "\n").encode("utf-8")
+                    try:
+                        ev = json.loads(linha)
+                    except json.JSONDecodeError:
+                        continue
+                    if ev.get("error"):
+                        _pull_state["erro"] = str(ev["error"])
+                        return
+                    if ev.get("status"):
+                        _pull_state["status"] = ev["status"]
+                    if isinstance(ev.get("total"), (int, float)):
+                        _pull_state["total"] = int(ev["total"])
+                    if isinstance(ev.get("completed"), (int, float)):
+                        _pull_state["completed"] = int(ev["completed"])
     except httpx.ConnectError:
-        yield (
-            json.dumps(
-                {
-                    "erro": True,
-                    "status": "Ollama nao esta rodando em localhost:11434",
-                }
-            )
-            + "\n"
-        ).encode("utf-8")
+        _pull_state["erro"] = "Ollama nao esta rodando em localhost:11434"
     except Exception as e:
-        yield (
-            json.dumps({"erro": True, "status": f"Falha no pull: {e}"}) + "\n"
-        ).encode("utf-8")
+        _pull_state["erro"] = f"Falha no pull: {e}"
+    finally:
+        _pull_state["ativo"] = False
+
+
+async def _garantir_pull(modelo: str) -> dict:
+    global _pull_task
+    async with _pull_lock:
+        if _pull_state["ativo"]:
+            if _pull_state["modelo"] and _pull_state["modelo"] != modelo:
+                return {
+                    **snapshot_pull(),
+                    "erro": f"Ja baixando {_pull_state['modelo']}",
+                    "conflito": True,
+                }
+            return snapshot_pull()
+        _pull_state.update(
+            {
+                "ativo": True,
+                "modelo": modelo,
+                "status": "Baixando...",
+                "completed": 0,
+                "total": 0,
+                "erro": None,
+            }
+        )
+        _pull_task = asyncio.create_task(_rodar_pull(modelo))
+        return snapshot_pull()
+
+
+async def stream_pull(modelo: str = MODELO_PADRAO) -> AsyncIterator[bytes]:
+    """Inicia o pull em background e retransmite progresso. Recarregar a pagina nao cancela."""
+    st = await _garantir_pull(modelo)
+    if st.get("conflito"):
+        yield _evento_pull({"erro": True, "status": st["erro"]})
+        return
+    last = b""
+    while True:
+        chunk = _evento_pull()
+        if chunk != last:
+            yield chunk
+            last = chunk
+        snap = snapshot_pull()
+        if not snap["ativo"]:
+            if not snap["erro"]:
+                yield _evento_pull({"status": snap["status"] or "success"})
+            break
+        await asyncio.sleep(0.3)
 
 
 async def deletar_modelo(modelo: str) -> dict:

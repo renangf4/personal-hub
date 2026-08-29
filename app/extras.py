@@ -153,7 +153,29 @@ EXTRAS: dict[str, dict] = {
             "caminho": "storage/totp-vaults/*.hubtotp",
         },
     },
+    "lan-dm": {
+        "slug": "lan-dm",
+        "nome": "Mensagem direta LAN",
+        "descricao": "Chat em tempo real na rede local — texto e arquivos entre PCs conectados ao hub.",
+        "icone": "bi-chat-dots",
+        "packages": [],
+        "imports": [],
+        "modulos": ["lan_dm"],
+        "somente_lan": True,
+        "escopo_dados": "lan-dm",
+        "persistencia": {
+            "tipo": "sqlite",
+            "rotulo": "Mensagens e anexos na LAN",
+            "caminho": "storage/hub.db · storage/lan-dm/arquivos",
+        },
+    },
 }
+
+
+def eh_browser_only(extra: dict) -> bool:
+    """Extra sem pip nem imports Python — ativacao so pela Loja."""
+    return not extra.get("packages") and not extra.get("imports")
+
 
 # Formatos das categorias (slug da tool -> chave do modulo)
 FORMATOS_VIDEO = [
@@ -245,5 +267,14 @@ TOOL_META: dict[str, dict] = {
         "aceita": "",
         "controles": "totp",
         "extra": "totp",
+    },
+    "lan_dm": {
+        "slug": "lan-dm",
+        "nome": "Mensagem direta LAN",
+        "descricao": "Chat na rede local — texto e arquivos entre PCs, em tempo real.",
+        "icone": "bi-chat-dots",
+        "aceita": "",
+        "controles": "lan-dm",
+        "extra": "lan-dm",
     },
 }

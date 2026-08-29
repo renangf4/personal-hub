@@ -15,6 +15,15 @@
     <p class="hub-subtitle mb-0">Instale, remova pacotes ou apague dados gerados. Caminhos relativos a pasta do hub.</p>
 </div>
 
+{% if hub_is_lan and hub_is_linux %}
+<div class="alert alert-info mb-4" role="status">
+    <strong>Modo LAN no Linux.</strong>
+    Instalar ou desinstalar roda <code>pip</code> neste servidor — celular e outros PCs so usam o que ja estiver ativo aqui.
+    Ferramentas que rodam no navegador precisam ser ativadas manualmente na Loja; nao vem instaladas por padrao.
+    Se o firewall bloquear acesso na rede: <code>sudo ufw allow {{ hub_port }}/tcp</code>
+</div>
+{% endif %}
+
 <div id="loja-alerta" class="alert d-none" role="alert"></div>
 
 <div class="row g-3 g-lg-4" id="loja-grid">
