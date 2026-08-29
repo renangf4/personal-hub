@@ -990,10 +990,10 @@ def _rede():
 
 def _lan_dm():
     if not config.IS_LAN:
-        raise HTTPException(status_code=404, detail="Mensagem direta LAN so funciona em modo LAN")
+        raise HTTPException(status_code=404, detail="Chat (LAN) so funciona em modo LAN")
     mod = registry.modulo("lan_dm")
     if mod is None:
-        raise HTTPException(status_code=404, detail="Mensagem direta LAN nao instalada. Abra a Loja.")
+        raise HTTPException(status_code=404, detail="Chat (LAN) nao instalado. Abra a Loja.")
     return mod
 
 

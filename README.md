@@ -16,7 +16,7 @@ Instale sob demanda pela **Loja** (`/loja`):
 - **Cofre de senhas** — arquivo `.hubvault` criptografado no navegador; importar / exportar / excluir; senha-mestra nunca gravada
 - **Dados fake** — gera perfis editaveis (nome, e-mail, CPF...); colecao `.hubfake` criptografada; importar / exportar
 - **Authenticator 2FA** — codigos TOTP locais; vault `.hubtotp` criptografado pra backup em pendrive
-- **Mensagem direta LAN** — chat em tempo real na rede (modo LAN): texto e arquivos entre PCs; canal geral ou DM
+- **Chat (LAN)** — tempo real na rede: texto e arquivos entre PCs; canal geral ou DM
 
 ## Requisitos
 

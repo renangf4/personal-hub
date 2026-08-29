@@ -155,7 +155,7 @@ EXTRAS: dict[str, dict] = {
     },
     "lan-dm": {
         "slug": "lan-dm",
-        "nome": "Mensagem direta LAN",
+        "nome": "Chat (LAN)",
         "descricao": "Chat em tempo real na rede local — texto e arquivos entre PCs conectados ao hub.",
         "icone": "bi-chat-dots",
         "packages": [],
@@ -270,7 +270,7 @@ TOOL_META: dict[str, dict] = {
     },
     "lan_dm": {
         "slug": "lan-dm",
-        "nome": "Mensagem direta LAN",
+        "nome": "Chat (LAN)",
         "descricao": "Chat na rede local — texto e arquivos entre PCs, em tempo real.",
         "icone": "bi-chat-dots",
         "aceita": "",

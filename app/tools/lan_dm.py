@@ -13,7 +13,7 @@ from fastapi import WebSocket
 
 from .. import db
 
-NOME = "Mensagem direta LAN"
+NOME = "Chat (LAN)"
 MAX_ARQUIVO_BYTES = 25 * 1024 * 1024
 MAX_TEXTO = 8000
 MAX_APELIDO = 40
