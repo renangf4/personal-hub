@@ -916,6 +916,7 @@
                     </div>`;
             }
             atualizarBotoesEditar();
+            oferecerReenvioSePendente(msgs);
             renderListaChatsAtiva();
             input.focus();
         } catch (err) {
@@ -1195,7 +1196,23 @@
             } else if (abortado) {
                 corpoAssistente.innerHTML = `<span class="text-secondary">Geracao cancelada.</span>`;
             } else {
-                corpoAssistente.innerHTML = `<span class="text-danger">Erro: ${escapeHtml(err.message || String(err))}</span>`;
+                corpoAssistente.innerHTML = `
+                    <span class="text-danger">Erro: ${escapeHtml(err.message || String(err))}</span>
+                    <div class="ai-chat__reenviar ai-chat__reenviar--inline mt-2">
+                        <button type="button" class="btn btn-sm btn-outline-primary ai-chat__reenviar-btn">
+                            <i class="bi bi-arrow-repeat"></i> Reenviar
+                        </button>
+                    </div>`;
+                const btnInline = corpoAssistente.querySelector('.ai-chat__reenviar-btn');
+                if (btnInline) {
+                    btnInline.addEventListener('click', () => {
+                        if (enviando) return;
+                        input.value = textoEnvio || '';
+                        anexosPendentes = (filesEnvio && filesEnvio.length) ? filesEnvio.slice() : [];
+                        renderAnexos();
+                        form.requestSubmit();
+                    });
+                }
             }
             mostrarAcoesPosInterrupcao(wrapAssistente, textoEnvio, filesEnvio);
         } finally {
@@ -1206,26 +1223,40 @@
         }
     });
 
+    function oferecerReenvioSePendente(msgs) {
+        if (!msgs || !msgs.length || msgs[msgs.length - 1].role !== 'user') return;
+        const texto = msgs[msgs.length - 1].conteudo || '';
+        const wrapAssistente = adicionarMensagem('assistant', '');
+        const corpo = wrapAssistente.querySelector('.ai-chat__msg-corpo');
+        corpo.innerHTML = '<span class="text-secondary small">Sem resposta do assistente.</span>';
+        mostrarAcoesPosInterrupcao(wrapAssistente, texto, []);
+    }
+
     function mostrarAcoesPosInterrupcao(wrapAssistente, texto, files) {
         if (!wrapAssistente) return;
-        wrapAssistente.querySelectorAll('.ai-chat__reenviar').forEach((el) => el.remove());
+        wrapAssistente.querySelectorAll('.ai-chat__reenviar:not(.ai-chat__reenviar--inline)').forEach((el) => el.remove());
+        const temInline = !!wrapAssistente.querySelector('.ai-chat__reenviar--inline');
         const bar = document.createElement('div');
         bar.className = 'ai-chat__reenviar';
         bar.innerHTML = `
-            <button type="button" class="btn btn-sm btn-outline-primary ai-chat__reenviar-btn">
-                <i class="bi bi-arrow-repeat"></i> Reenviar
-            </button>
+            ${temInline ? '' : `
+            <button type="button" class="btn btn-sm btn-primary ai-chat__reenviar-btn">
+                <i class="bi bi-arrow-repeat"></i> Reenviar pergunta
+            </button>`}
             <button type="button" class="btn btn-sm btn-outline-secondary ai-chat__editar-btn">
                 <i class="bi bi-pencil"></i> Editar pergunta
             </button>
         `;
-        bar.querySelector('.ai-chat__reenviar-btn').addEventListener('click', () => {
-            if (enviando) return;
-            input.value = texto || '';
-            anexosPendentes = (files && files.length) ? files.slice() : [];
-            renderAnexos();
-            form.requestSubmit();
-        });
+        const btnReenviar = bar.querySelector('.ai-chat__reenviar-btn');
+        if (btnReenviar) {
+            btnReenviar.addEventListener('click', () => {
+                if (enviando) return;
+                input.value = texto || '';
+                anexosPendentes = (files && files.length) ? files.slice() : [];
+                renderAnexos();
+                form.requestSubmit();
+            });
+        }
         bar.querySelector('.ai-chat__editar-btn').addEventListener('click', async () => {
             if (enviando) return;
             const lastUser = [...mensagensEl.querySelectorAll('.ai-chat__msg--user')].pop();

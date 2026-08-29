@@ -274,24 +274,45 @@ def _parse_tamanho_gb(texto: str | None) -> float | None:
     return float(m.group(1).replace(",", "."))
 
 
+def _inferir_gb_do_nome(modelo: str) -> float | None:
+    """Heuristica Q4: ~0,67 GB por bilhao de parametros (7B -> ~4,7 GB)."""
+    m = re.search(r"v?(\d+(?:\.\d+)?)\s*b", (modelo or "").lower())
+    if not m:
+        return None
+    params_b = float(m.group(1))
+    return round(max(0.8, params_b * 0.67), 1)
+
+
+def _ajustar_gb_ram(disk_gb: float, modelo: str) -> float:
+    """Preset/disco as vezes e download bruto; RAM carregada costuma ser bem menor."""
+    inferido = _inferir_gb_do_nome(modelo)
+    if inferido and disk_gb > inferido * 1.35:
+        return inferido
+    return disk_gb
+
+
 def _tamanho_modelo_gb(modelo: str, tamanhos: dict[str, float] | None = None) -> float:
-    """Estima GB em disco/carregado do modelo (preset ou mapa do /api/tags)."""
+    """Estima GB em RAM ao carregar (Ollama tags, preset ajustado ou nome do modelo)."""
     nome = (modelo or "").strip()
     low = nome.lower()
     if tamanhos:
         if nome in tamanhos:
-            return tamanhos[nome]
+            return _ajustar_gb_ram(tamanhos[nome], nome)
         for k, v in tamanhos.items():
             kl = k.lower()
             if kl == low or kl.startswith(low + ":") or low.startswith(kl.split(":")[0]):
-                return v
+                return _ajustar_gb_ram(v, nome)
+            if low.startswith(kl.rsplit(":", 1)[0] + ":") or kl.startswith(low.rsplit(":", 1)[0] + ":"):
+                return _ajustar_gb_ram(v, nome)
     for preset in MODELOS_PRESET:
         slug = preset["slug"].lower()
         if low == slug or low.startswith(slug + ":") or slug in low:
             gb = _parse_tamanho_gb(preset.get("tamanho"))
             if gb:
-                return gb
-    # fallback conservador (7B Q4 típico)
+                return _ajustar_gb_ram(gb, nome)
+    inferido = _inferir_gb_do_nome(nome)
+    if inferido:
+        return inferido
     return 4.7
 
 
@@ -302,20 +323,25 @@ def estimar_need_bytes(
     carregado: dict | None = None,
 ) -> int:
     """Bytes necessarios agora: carga completa ou custo marginal se ja residente no Ollama."""
-    modelo_gb = _tamanho_modelo_gb(modelo, tamanhos)
+    if carregado and int(carregado.get("size") or 0) > 0:
+        modelo_gb = int(carregado["size"]) / (1024 ** 3)
+    else:
+        modelo_gb = _tamanho_modelo_gb(modelo, tamanhos)
     ctx = max(512, int(num_ctx or CONTEXT_PADRAO))
-    kv = (ctx / 4096.0) * modelo_gb * 0.42
+    kv = (ctx / 4096.0) * modelo_gb * 0.18
 
     if carregado and int(carregado.get("size") or 0) > 0:
         ctx_atual = max(512, int(carregado.get("context_length") or 4096))
-        kv_atual = (ctx_atual / 4096.0) * modelo_gb * 0.42
+        kv_atual = (ctx_atual / 4096.0) * modelo_gb * 0.18
         if ctx <= ctx_atual:
             marginal_gb = max(0.3, modelo_gb * 0.08)
         else:
             marginal_gb = max(0.35, (kv - kv_atual) + 0.25)
         return int(marginal_gb * (1024 ** 3))
 
-    pesos = modelo_gb * 1.2
+    # Pesos ~tamanho Q4; KV cresce com contexto mas nao linearmente como antes.
+    pesos = modelo_gb * 0.95
+    kv = (ctx / 4096.0) * modelo_gb * 0.18
     return int(max(1.0, pesos + kv) * (1024 ** 3))
 
 
@@ -450,6 +476,7 @@ def limitar_contexto(
     ram = ram if ram is not None else obter_ram()
     vram = vram if vram is not None else obter_vram()
     pedido = num_ctx if num_ctx in CONTEXTOS_PERMITIDOS else CONTEXT_PADRAO
+    residente = bool(carregado and int(carregado.get("size") or 0) > 0)
 
     need_pedido = estimar_need_bytes(modelo, pedido, tamanhos, carregado)
     if memoria_suficiente(need_pedido, ram, vram):
@@ -457,6 +484,28 @@ def limitar_contexto(
 
     seguro = sugerir_contexto(ram, modelo, tamanhos, vram, carregado)
     need_min = estimar_need_bytes(modelo, CONTEXTOS[0]["tokens"], tamanhos, carregado)
+    if residente:
+        if seguro != pedido:
+            modo = "GPU/VRAM" if _modo_memoria(vram) == "gpu" else "RAM"
+            return seguro, {
+                "tipo": "aviso",
+                "hub": True,
+                "pedido": pedido,
+                "usado": seguro,
+                "msg": (
+                    f"Contexto reduzido de {_label_ctx(pedido)} para {_label_ctx(seguro)} "
+                    f"pra caber com folga em {modo} (modelo ja carregado no Ollama)."
+                ),
+            }
+        return pedido, {
+            "tipo": "aviso",
+            "hub": True,
+            "msg": (
+                "Memoria apertada, mas o modelo ja esta carregado — "
+                "se travar, reduza o contexto ou troque o modelo."
+            ),
+        }
+
     if not memoria_suficiente(need_min, ram, vram):
         need_gb = need_min / (1024 ** 3)
         folga_gb = _ram_folga_bytes(ram) / (1024 ** 3)
@@ -825,7 +874,7 @@ MODELOS_PRESET = [
         "slug": "DeepHat/DeepHat-V1-7B",
         "nome": "DeepHat",
         "descricao": "Cybersecurity / red team (deephat.ai). Nao censurado.",
-        "tamanho": "~14 GB",
+        "tamanho": "~4.7 GB",
         "icone": "bi-shield-lock",
         "foco": "seguranca",
     },
@@ -1033,6 +1082,24 @@ def _system_prompt_para(modelo: str) -> str:
     return SYSTEM_PROMPTS_FOCO.get(_foco_do_modelo(modelo), SYSTEM_PROMPT_GERAL)
 
 
+async def obter_tamanhos_ollama() -> dict[str, float]:
+    """Mapa nome -> GB (tamanho em disco do /api/tags, ajustado pra estimativa de RAM)."""
+    tamanhos: dict[str, float] = {}
+    try:
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            resp = await client.get(f"{OLLAMA_BASE_URL}/api/tags")
+            if resp.status_code != 200:
+                return tamanhos
+            for m in (resp.json() or {}).get("models") or []:
+                nome = m.get("name", "")
+                size = m.get("size")
+                if nome and isinstance(size, (int, float)) and size > 0:
+                    tamanhos[nome] = _ajustar_gb_ram(size / (1024 ** 3), nome)
+    except Exception:
+        pass
+    return tamanhos
+
+
 async def verificar_status(modelo: str = MODELO_PADRAO) -> dict:
     """Verifica se o Ollama esta rodando e quais modelos preset ja foram baixados."""
     exe = detectar_ollama_instalado()
@@ -1067,13 +1134,11 @@ async def verificar_status(modelo: str = MODELO_PADRAO) -> dict:
                 if not nome:
                     continue
                 modelos.append(nome)
-                size = m.get("size")
-                if isinstance(size, (int, float)) and size > 0:
-                    tamanhos[nome] = size / (1024 ** 3)
             info["modelos"] = modelos
             info["modelo_disponivel"] = _modelo_disponivel(modelo, modelos)
             for preset in info["presets"]:
                 preset["baixado"] = _modelo_disponivel(preset["slug"], modelos)
+        tamanhos = await obter_tamanhos_ollama()
     except httpx.ConnectError:
         info["msg"] = "Ollama nao esta rodando em localhost:11434"
     except Exception as e:
@@ -1094,7 +1159,7 @@ async def verificar_status(modelo: str = MODELO_PADRAO) -> dict:
         modelo, tamanhos, info["ram"], info["vram"], carregado
     )
     for c in info["contextos"]:
-        c["indicado"] = c["tokens"] == sugerido
+        c["indicado"] = c["tokens"] == sugerido and c.get("cabe", False)
     info["pull"] = snapshot_pull()
     return info
 
@@ -1571,9 +1636,10 @@ async def stream_chat(
 
     ram = obter_ram()
     vram = obter_vram()
+    tamanhos = await obter_tamanhos_ollama()
     carregado = await obter_modelo_carregado(modelo)
     ctx, aviso = limitar_contexto(
-        num_ctx, ram, modelo, vram=vram, carregado=carregado
+        num_ctx, ram, modelo, tamanhos, vram=vram, carregado=carregado
     )
     if aviso and aviso.get("erro"):
         yield aviso
