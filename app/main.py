@@ -1224,10 +1224,7 @@ def api_lan_dm_arquivo(msg_id: int):
 
 @app.websocket("/ws/lan-dm")
 async def ws_lan_dm(websocket: WebSocket):
-    if not config.IS_LAN:
-        await websocket.close(code=4404)
-        return
-    if registry.modulo("lan_dm") is None:
+    if not config.IS_LAN or registry.modulo("lan_dm") is None:
         await websocket.close(code=4404)
         return
     if not auth.autenticado_ws(websocket):
@@ -1236,6 +1233,7 @@ async def ws_lan_dm(websocket: WebSocket):
 
     from .tools import lan_dm as lan
 
+    await websocket.accept()
     apelido = ""
     try:
         raw = await websocket.receive_text()
@@ -1247,8 +1245,8 @@ async def ws_lan_dm(websocket: WebSocket):
         if payload.get("tipo") != "join":
             await websocket.close(code=4400)
             return
-        ok = await lan.hub.connect(websocket, apelido)
-        if not ok:
+        apelido = await lan.hub.connect(websocket, payload.get("apelido") or "")
+        if not apelido:
             return
 
         await websocket.send_text(

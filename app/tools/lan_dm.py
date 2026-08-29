@@ -94,15 +94,12 @@ class LanDmHub:
     async def connect(self, ws: WebSocket, apelido: str) -> str | None:
         apelido = normalizar_apelido(apelido)
         if not apelido_valido(apelido):
-            await ws.accept()
             await ws.close(code=4400)
             return None
         async with self._lock:
             if apelido in self._peers:
-                await ws.accept()
                 await ws.close(code=4409)
                 return None
-            await ws.accept()
             self._peers[apelido] = ws
             self._ws_meta[ws] = apelido
         await self._broadcast_presence()
