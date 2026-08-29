@@ -559,19 +559,22 @@
         const decoder = new TextDecoder();
         let buffer = '';
         const onEv = onEvent || (() => {});
+        const processar = (linha) => {
+            if (!linha.trim()) return;
+            let ev;
+            try { ev = JSON.parse(linha); } catch (_) { return; }
+            onEv(ev);
+        };
         while (true) {
             const { value, done } = await reader.read();
             if (done) break;
             buffer += decoder.decode(value, { stream: true });
             const linhas = buffer.split('\n');
-            buffer = linhas.pop();
-            for (const linha of linhas) {
-                if (!linha.trim()) continue;
-                let ev;
-                try { ev = JSON.parse(linha); } catch (_) { continue; }
-                onEv(ev);
-            }
+            buffer = linhas.pop() || '';
+            for (const linha of linhas) processar(linha);
         }
+        buffer += decoder.decode();
+        if (buffer.trim()) processar(buffer);
     }
 
     function slugPuxando() {
@@ -650,7 +653,9 @@
 
     btnInstalar.addEventListener('click', async () => {
         btnInstalar.disabled = true;
-        prepararPullUI('Preparando download do Ollama...');
+        prepararPullUI('Preparando instalacao do Ollama...');
+        pullBar.classList.add('progress-bar-animated', 'progress-bar-striped');
+        let concluido = false;
         try {
             await consumirStream('/api/ai/instalar-ollama', {
                 onEvent: (ev) => {
@@ -659,22 +664,41 @@
                         throw new Error((ev.status || 'Falha na instalacao') + det);
                     }
                     if (ev.etapa === 'download') {
+                        pullBar.classList.remove('progress-bar-animated', 'progress-bar-striped');
                         atualizarProgresso(ev);
                     } else if (ev.etapa === 'instalando') {
-                        pullBar.style.width = '100%';
-                        pullPercent.textContent = '';
+                        if (typeof ev.completed === 'number' && ev.total) {
+                            pullBar.classList.remove('progress-bar-animated', 'progress-bar-striped');
+                            atualizarProgresso(ev);
+                        } else {
+                            pullBar.classList.add('progress-bar-animated', 'progress-bar-striped');
+                            pullBar.style.width = '100%';
+                            pullPercent.textContent = '';
+                        }
                         pullStatus.textContent = ev.status || 'Instalando...';
                         pullDetalhe.textContent = (ultimoStatus && ultimoStatus.sistema === 'Linux')
                             ? 'Instalando no servidor do hub. Pode levar alguns minutos.'
                             : 'Acompanhe o instalador do Ollama na sua tela.';
                     } else if (ev.etapa === 'concluido') {
-                        pullStatus.textContent = ev.status || 'Instalado!';
-                        pullDetalhe.textContent = '';
+                        concluido = true;
+                        pullBar.classList.remove('progress-bar-animated', 'progress-bar-striped');
+                        pullBar.style.width = '100%';
+                        pullPercent.textContent = '100%';
+                        pullStatus.textContent = ev.status || 'Ollama instalado!';
+                        pullDetalhe.textContent = 'Abrindo escolha de modelos...';
                     }
                 },
             });
-            setTimeout(verificarStatus, 800);
+            if (!concluido) {
+                pullBar.classList.remove('progress-bar-animated', 'progress-bar-striped');
+                pullBar.style.width = '100%';
+                pullPercent.textContent = '100%';
+                pullStatus.textContent = 'Instalacao concluida';
+                pullDetalhe.textContent = 'Verificando Ollama...';
+            }
+            await verificarStatus();
         } catch (err) {
+            pullBar.classList.remove('progress-bar-animated', 'progress-bar-striped');
             exibirErro(err.message);
             btnInstalar.disabled = false;
         }

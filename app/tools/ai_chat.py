@@ -1160,7 +1160,8 @@ def corrigir_modo_console_windows() -> dict | None:
 
 async def _iter_aguardar_ollama(enviar) -> AsyncIterator[bytes]:
     """Poll ate Ollama responder em localhost:11434."""
-    for _ in range(120):
+    total_passos = 120
+    for passo in range(total_passos):
         await asyncio.sleep(2)
         exe = detectar_ollama_instalado()
         if exe and not _ollama_ja_responde():
@@ -1169,6 +1170,8 @@ async def _iter_aguardar_ollama(enviar) -> AsyncIterator[bytes]:
             yield enviar({
                 "etapa": "instalando",
                 "status": "Aguardando instalacao...",
+                "completed": passo + 1,
+                "total": total_passos,
             })
             continue
         try:
@@ -1179,6 +1182,8 @@ async def _iter_aguardar_ollama(enviar) -> AsyncIterator[bytes]:
                         "etapa": "concluido",
                         "status": "Ollama instalado e em execucao.",
                         "exe": exe,
+                        "completed": total_passos,
+                        "total": total_passos,
                     })
                     return
         except Exception:
@@ -1187,6 +1192,8 @@ async def _iter_aguardar_ollama(enviar) -> AsyncIterator[bytes]:
             "etapa": "instalando",
             "status": "Aguardando Ollama em localhost:11434...",
             "exe": exe,
+            "completed": passo + 1,
+            "total": total_passos,
         })
     yield enviar({
         "erro": True,
