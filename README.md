@@ -20,9 +20,9 @@ Instale sob demanda pela **Loja** (`/loja`):
 
 ## Requisitos
 
-- Windows, Linux ou macOS
+- Windows, Linux, macOS ou Tails
 - Python 3.10+ no PATH
-- **Linux (Ubuntu/Debian/WSL):** pacote `python3-venv` (ou `python3.12-venv`, conforme a versao) — sem ele o `start.sh` nao cria o ambiente virtual na primeira execucao
+- **Linux (Ubuntu/Debian/WSL/Tails):** pacote `python3-venv` (ou `python3.12-venv`, conforme a versao) — sem ele o `start.sh` nao cria o ambiente virtual na primeira execucao
 - [Ollama](https://ollama.com) (opcional; so para o Assistente de IA)
 - Conta [Shodan](https://account.shodan.io/) (opcional; so se for usar a consulta Shodan)
 
@@ -84,6 +84,31 @@ Modo LAN:
 ```bash
 ./start.sh lan sua-senha
 ```
+
+### Tails OS
+
+Coloque o projeto no **Persistent Storage** (ex.: `~/Persistent/personal-hub`). Na primeira vez:
+
+```bash
+sudo apt install python3-venv torsocks
+```
+
+Marque os dois em **Additional Software** pra reinstalar no proximo boot.
+
+O `start.sh` pode avisar `venv incompativel` e recriar — normal se a pasta veio do Windows. O pip **nao** alcanca o PyPI sozinho (o Tails so sai pelo Tor). Se a instalacao falhar com `A rede esta fora de alcance` / `No matching distribution found`, **nao** rode `./start.sh` de novo: o venv ja existe e o script pula o pip. Com o Tor conectado:
+
+```bash
+cd ~/Persistent/personal-hub
+source venv/bin/activate
+torsocks python -m pip install --upgrade pip
+torsocks pip install --timeout 120 -r requirements.txt
+deactivate
+./start.sh
+```
+
+PyPI pelo Tor e lento; se falhar no meio, repita os `torsocks pip`.
+
+O Tor Browser nao abre `localhost` por padrao. Em `about:config`, `network.proxy.allow_hijacking_localhost` = `false`, depois `http://127.0.0.1:7777`.
 
 ## Caracteristicas
 
