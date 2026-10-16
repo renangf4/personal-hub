@@ -1102,7 +1102,8 @@ MODELOS_PRESET = [
         "quant_label": "Q4",
         "descricao": (
             "Mesmo DeepHat em Q4 (~5 GB). Pentest e red team — indicado com 8 GB de RAM "
-            "e poucos apps abertos (~6 GB livres)."
+            "e poucos apps abertos (~6 GB livres). O hub aplica template ChatML "
+            "(evita crash tojson/tools no llama-server)."
         ),
         "tamanho": "~4.7 GB",
         "icone": "bi-shield-lock",
@@ -1204,6 +1205,99 @@ async def resolver_modelo_ollama(
 ) -> str | None:
     nomes = instalados if instalados is not None else await listar_modelos_instalados()
     return _nome_instalado(modelo, nomes)
+
+
+# DeepHat embute Jinja com `tools | tojson`; llama-server antigo/medio falha na carga
+# (exit 1: Unknown filter 'tojson' for type Undefined). ChatML em Go no Modelfile evita isso.
+_CHATML_TEMPLATE = (
+    "{{- range .Messages }}<|im_start|>{{ .Role }}\n"
+    "{{ .Content }}<|im_end|>\n"
+    "{{ end }}<|im_start|>assistant\n"
+)
+
+_DEEPHAT_ALIAS = {
+    "leve": "deephat-hub:q4",
+    "completo": "deephat-hub:full",
+}
+
+
+def _eh_deephat(modelo: str) -> bool:
+    return "deephat" in (modelo or "").lower()
+
+
+def _alias_deephat(modelo: str) -> str:
+    m = (modelo or "").lower()
+    if "deephat/deephat" in m or m.startswith("deephat/"):
+        return _DEEPHAT_ALIAS["completo"]
+    return _DEEPHAT_ALIAS["leve"]
+
+
+def _erro_template_tojson(texto: str) -> bool:
+    t = (texto or "").lower()
+    return "tojson" in t and ("tools" in t or "undefined" in t or "template" in t)
+
+
+async def _criar_modelo_chatml(origem: str, alias: str) -> dict:
+    """Cria alias Ollama com TEMPLATE ChatML (sem tojson/tools)."""
+    try:
+        async with httpx.AsyncClient(timeout=180.0) as client:
+            resp = await client.post(
+                f"{OLLAMA_BASE_URL}/api/create",
+                json={
+                    "model": alias,
+                    "from": origem,
+                    "template": _CHATML_TEMPLATE,
+                    "parameters": {
+                        "stop": ["<|im_start|>", "<|im_end|>"],
+                    },
+                    "stream": False,
+                },
+            )
+            if resp.status_code not in (200, 201):
+                return {
+                    "ok": False,
+                    "msg": f"HTTP {resp.status_code}: {resp.text[:400]}",
+                }
+            return {"ok": True, "nome": alias}
+    except httpx.ConnectError:
+        return {"ok": False, "msg": "Ollama nao esta rodando em localhost:11434"}
+    except Exception as e:
+        return {"ok": False, "msg": str(e)}
+
+
+async def garantir_deephat_chatml(modelo: str) -> dict:
+    """Garante alias ChatML do DeepHat; retorna {ok, nome, criado?}."""
+    if not _eh_deephat(modelo):
+        return {"ok": True, "nome": modelo, "criado": False}
+
+    instalados = await listar_modelos_instalados()
+    alias = _alias_deephat(modelo)
+    ja = _nome_instalado(alias, instalados)
+    if ja:
+        return {"ok": True, "nome": ja, "criado": False}
+
+    origem = _nome_instalado(modelo, instalados) or modelo
+    if not _nome_instalado(origem, instalados) and origem != modelo:
+        origem = modelo
+    if not _nome_instalado(origem, instalados):
+        # Origem ainda nao instalada — caller precisa puxar antes
+        return {
+            "ok": False,
+            "nome": modelo,
+            "criado": False,
+            "msg": f"Modelo base `{modelo}` nao instalado",
+        }
+
+    origem_exato = _nome_instalado(origem, instalados) or origem
+    criado = await _criar_modelo_chatml(origem_exato, alias)
+    if not criado.get("ok"):
+        return {
+            "ok": False,
+            "nome": origem_exato,
+            "criado": False,
+            "msg": criado.get("msg") or "Falha ao criar alias ChatML",
+        }
+    return {"ok": True, "nome": alias, "criado": True}
 
 
 OLLAMA_DOWNLOAD = {
@@ -1353,6 +1447,8 @@ async def verificar_status(modelo: str = MODELO_PADRAO) -> dict:
             info["modelo_disponivel"] = _modelo_disponivel(modelo, modelos)
             for preset in info["presets"]:
                 nome = _nome_instalado(preset["slug"], modelos)
+                if not nome and _eh_deephat(preset["slug"]):
+                    nome = _nome_instalado(_alias_deephat(preset["slug"]), modelos)
                 preset["baixado"] = nome is not None
                 if nome:
                     preset["nome_ollama"] = nome
@@ -1767,6 +1863,19 @@ async def _rodar_pull(modelo: str) -> None:
                         _pull_state["total"] = int(ev["total"])
                     if isinstance(ev.get("completed"), (int, float)):
                         _pull_state["completed"] = int(ev["completed"])
+        if not _pull_state["erro"] and _eh_deephat(modelo):
+            _pull_state["status"] = "Ajustando template ChatML (DeepHat)..."
+            patch = await garantir_deephat_chatml(modelo)
+            if not patch.get("ok"):
+                _pull_state["erro"] = (
+                    "Download ok, mas falhou o alias ChatML do DeepHat: "
+                    f"{patch.get('msg') or 'erro desconhecido'}. "
+                    "No servidor: atualize o Ollama ou rode "
+                    f"`ollama create {_alias_deephat(modelo)} -f Modelfile` "
+                    "com TEMPLATE ChatML."
+                )
+            else:
+                _pull_state["status"] = "success"
     except httpx.ConnectError:
         _pull_state["erro"] = "Ollama nao esta rodando em localhost:11434"
     except Exception as e:
@@ -1857,6 +1966,9 @@ async def stream_chat(
     """Streama a resposta do Ollama em chunks (dicts decodificados)."""
     instalados = await listar_modelos_instalados()
     nome_ollama = _nome_instalado(modelo, instalados)
+    if not nome_ollama and _eh_deephat(modelo):
+        # Alias ChatML ja criado numa sessao anterior
+        nome_ollama = _nome_instalado(_alias_deephat(modelo), instalados)
     if not nome_ollama:
         yield {
             "erro": True,
@@ -1867,6 +1979,20 @@ async def stream_chat(
             ),
         }
         return
+
+    if _eh_deephat(nome_ollama) or _eh_deephat(modelo):
+        patch = await garantir_deephat_chatml(nome_ollama)
+        if patch.get("ok") and patch.get("nome"):
+            nome_ollama = patch["nome"]
+        elif patch.get("msg"):
+            yield {
+                "erro": True,
+                "msg": (
+                    "DeepHat precisa de template ChatML (bug tojson/tools no llama-server). "
+                    f"{patch['msg']}"
+                ),
+            }
+            return
 
     msgs = []
     if incluir_system:
@@ -1907,29 +2033,60 @@ async def stream_chat(
         },
     }
 
+    async def _ler_stream(client: httpx.AsyncClient, body: dict) -> AsyncIterator[dict]:
+        async with client.stream(
+            "POST",
+            f"{OLLAMA_BASE_URL}/api/chat",
+            json=body,
+        ) as resp:
+            if resp.status_code != 200:
+                erro = await resp.aread()
+                yield {
+                    "erro": True,
+                    "msg": f"HTTP {resp.status_code}: {erro.decode('utf-8', errors='ignore')}",
+                }
+                return
+            async for linha in resp.aiter_lines():
+                if not linha:
+                    continue
+                try:
+                    data = json.loads(linha)
+                except json.JSONDecodeError:
+                    continue
+                yield data
+
     try:
         async with httpx.AsyncClient(timeout=None) as client:
-            async with client.stream(
-                "POST",
-                f"{OLLAMA_BASE_URL}/api/chat",
-                json=payload,
-            ) as resp:
-                if resp.status_code != 200:
-                    erro = await resp.aread()
-                    yield {
-                        "erro": True,
-                        "msg": f"HTTP {resp.status_code}: {erro.decode('utf-8', errors='ignore')}",
-                    }
+            async for data in _ler_stream(client, payload):
+                if data.get("erro") and _erro_template_tojson(data.get("msg", "")):
+                    # Modelo cru ainda; forca alias e tenta de novo uma vez
+                    base = nome_ollama if _eh_deephat(nome_ollama) else modelo
+                    patch = await garantir_deephat_chatml(base)
+                    if not patch.get("ok") or not patch.get("nome"):
+                        yield {
+                            "erro": True,
+                            "msg": (
+                                "DeepHat: template Jinja com `tojson`/`tools` derruba o "
+                                "llama-server. Atualize o hub e tente de novo, ou no PC Mint: "
+                                f"crie `{_alias_deephat(modelo)}` com TEMPLATE ChatML."
+                            ),
+                        }
+                        return
+                    if patch["nome"] == nome_ollama:
+                        yield {
+                            "erro": True,
+                            "msg": (
+                                "DeepHat ainda falha apos alias ChatML. "
+                                "Atualize o Ollama no PC Mint "
+                                "(`curl -fsSL https://ollama.com/install.sh | sh`)."
+                            ),
+                        }
+                        return
+                    payload = {**payload, "model": patch["nome"]}
+                    async for data2 in _ler_stream(client, payload):
+                        yield data2
                     return
-
-                async for linha in resp.aiter_lines():
-                    if not linha:
-                        continue
-                    try:
-                        data = json.loads(linha)
-                    except json.JSONDecodeError:
-                        continue
-                    yield data
+                yield data
     except httpx.ConnectError:
         yield {"erro": True, "msg": "Ollama nao esta rodando em localhost:11434"}
         return
