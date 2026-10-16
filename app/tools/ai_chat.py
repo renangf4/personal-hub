@@ -1103,7 +1103,7 @@ MODELOS_PRESET = [
         "descricao": (
             "Mesmo DeepHat em Q4 (~5 GB). Pentest e red team — indicado com 8 GB de RAM "
             "e poucos apps abertos (~6 GB livres). O hub aplica template ChatML "
-            "(evita crash tojson/tools no llama-server)."
+            "(o hub monta alias sem Jinja automaticamente)."
         ),
         "tamanho": "~4.7 GB",
         "icone": "bi-shield-lock",
@@ -1207,8 +1207,8 @@ async def resolver_modelo_ollama(
     return _nome_instalado(modelo, nomes)
 
 
-# DeepHat embute Jinja com `tools | tojson`; llama-server antigo/medio falha na carga
-# (exit 1: Unknown filter 'tojson' for type Undefined). ChatML em Go no Modelfile evita isso.
+# DeepHat embute Jinja com `tools | tojson`; o llama-server preferia o GGUF e
+# caia na carga. Alias com TEMPLATE ChatML + PARSER passthrough forca --no-jinja.
 _CHATML_TEMPLATE = (
     "{{- range .Messages }}<|im_start|>{{ .Role }}\n"
     "{{ .Content }}<|im_end|>\n"
@@ -1216,20 +1216,44 @@ _CHATML_TEMPLATE = (
 )
 
 _DEEPHAT_ALIAS = {
-    "leve": "deephat-hub:q4",
-    "completo": "deephat-hub:full",
+    "leve": "deephat-hub:q4-safe",
+    "completo": "deephat-hub:full-safe",
 }
+
+_DEEPHAT_ORIGEM = {
+    "leve": "hf.co/liodon-ai/DeepHat-V1-7B-imatrix-GGUF:Q4_K_M",
+    "completo": "DeepHat/DeepHat-V1-7B",
+}
+
+_DEEPHAT_ALIASES_LEGADOS = (
+    "deephat-hub:q4",
+    "deephat-hub:full",
+    "deephat-hub:q4:latest",
+    "deephat-hub:full:latest",
+)
 
 
 def _eh_deephat(modelo: str) -> bool:
     return "deephat" in (modelo or "").lower()
 
 
-def _alias_deephat(modelo: str) -> str:
+def _variante_deephat(modelo: str) -> str:
     m = (modelo or "").lower()
-    if "deephat/deephat" in m or m.startswith("deephat/"):
-        return _DEEPHAT_ALIAS["completo"]
-    return _DEEPHAT_ALIAS["leve"]
+    if "full-safe" in m or "deephat/deephat" in m or (
+        m.startswith("deephat/") and "hub" not in m
+    ):
+        return "completo"
+    if "full" in m and "hub" in m:
+        return "completo"
+    return "leve"
+
+
+def _alias_deephat(modelo: str) -> str:
+    return _DEEPHAT_ALIAS[_variante_deephat(modelo)]
+
+
+def _origem_deephat(modelo: str) -> str:
+    return _DEEPHAT_ORIGEM[_variante_deephat(modelo)]
 
 
 def _erro_template_tojson(texto: str) -> bool:
@@ -1237,22 +1261,64 @@ def _erro_template_tojson(texto: str) -> bool:
     return "tojson" in t and ("tools" in t or "undefined" in t or "template" in t)
 
 
+async def _show_modelo(nome: str) -> dict | None:
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.post(
+                f"{OLLAMA_BASE_URL}/api/show",
+                json={"model": nome, "name": nome},
+            )
+            if resp.status_code != 200:
+                return None
+            return resp.json() or {}
+    except Exception:
+        return None
+
+
+def _modelfile_tem_passthrough(show: dict | None) -> bool:
+    if not show:
+        return False
+    mf = (show.get("modelfile") or "").lower()
+    if "passthrough" in mf:
+        return True
+    details = show.get("details") or {}
+    for chave in ("parser", "renderer", "family"):
+        if "passthrough" in str(details.get(chave) or "").lower():
+            return True
+    return False
+
+
+async def _delete_modelo_silencioso(nome: str) -> None:
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            await client.request(
+                "DELETE",
+                f"{OLLAMA_BASE_URL}/api/delete",
+                json={"model": nome, "name": nome},
+            )
+    except Exception:
+        pass
+
+
 async def _criar_modelo_chatml(origem: str, alias: str) -> dict:
-    """Cria alias Ollama com TEMPLATE ChatML (sem tojson/tools)."""
+    """Cria alias com ChatML + PARSER passthrough (desliga Jinja do GGUF)."""
+    body = {
+        "model": alias,
+        "from": origem,
+        "template": _CHATML_TEMPLATE,
+        "parser": "passthrough",
+        "parameters": {
+            "stop": ["<|im_start|>", "<|im_end|>"],
+        },
+        "stream": False,
+    }
     try:
         async with httpx.AsyncClient(timeout=180.0) as client:
-            resp = await client.post(
-                f"{OLLAMA_BASE_URL}/api/create",
-                json={
-                    "model": alias,
-                    "from": origem,
-                    "template": _CHATML_TEMPLATE,
-                    "parameters": {
-                        "stop": ["<|im_start|>", "<|im_end|>"],
-                    },
-                    "stream": False,
-                },
-            )
+            resp = await client.post(f"{OLLAMA_BASE_URL}/api/create", json=body)
+            if resp.status_code not in (200, 201):
+                # Ollama antigo pode rejeitar `parser` — tenta so com template
+                body.pop("parser", None)
+                resp = await client.post(f"{OLLAMA_BASE_URL}/api/create", json=body)
             if resp.status_code not in (200, 201):
                 return {
                     "ok": False,
@@ -1265,38 +1331,132 @@ async def _criar_modelo_chatml(origem: str, alias: str) -> dict:
         return {"ok": False, "msg": str(e)}
 
 
-async def garantir_deephat_chatml(modelo: str) -> dict:
-    """Garante alias ChatML do DeepHat; retorna {ok, nome, criado?}."""
+async def atualizar_ollama_automatico() -> dict:
+    """Atualiza o Ollama pelo hub (Linux via install.sh; Windows via instalador)."""
+    sistema = platform.system()
+    if sistema == "Linux":
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "bash",
+                "-c",
+                "curl -fsSL https://ollama.com/install.sh | sh",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.STDOUT,
+            )
+        except OSError as e:
+            return {"ok": False, "msg": f"Nao foi possivel atualizar Ollama: {e}"}
+        saida = ""
+        if proc.stdout:
+            while True:
+                linha = await proc.stdout.readline()
+                if not linha:
+                    break
+                saida = linha.decode("utf-8", errors="replace").rstrip()
+        codigo = await proc.wait()
+        if codigo != 0:
+            return {
+                "ok": False,
+                "msg": f"Atualizacao Ollama falhou (codigo {codigo}): {saida}",
+            }
+        # Reinicia servico se existir; senao sobe serve
+        try:
+            await asyncio.create_subprocess_exec(
+                "systemctl",
+                "restart",
+                "ollama",
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL,
+            )
+            await asyncio.sleep(1.5)
+        except Exception:
+            pass
+        if not _ollama_ja_responde():
+            iniciar_servico_ollama()
+            for _ in range(20):
+                await asyncio.sleep(0.5)
+                if _ollama_ja_responde():
+                    break
+        return {"ok": _ollama_ja_responde(), "msg": saida or "Ollama atualizado"}
+
+    if sistema == "Windows":
+        # Reusa o fluxo de instalacao (abre o setup); o usuario conclui no assistente.
+        return {
+            "ok": False,
+            "msg": "No Windows o hub abre o instalador do Ollama; conclua o assistente.",
+            "precisa_ui": True,
+        }
+
+    return {"ok": False, "msg": f"Atualizacao automatica nao suportada em {sistema}"}
+
+
+async def garantir_deephat_chatml(modelo: str, force: bool = False) -> dict:
+    """Garante alias seguro do DeepHat; retorna {ok, nome, criado?}."""
     if not _eh_deephat(modelo):
         return {"ok": True, "nome": modelo, "criado": False}
 
     instalados = await listar_modelos_instalados()
     alias = _alias_deephat(modelo)
-    ja = _nome_instalado(alias, instalados)
-    if ja:
-        return {"ok": True, "nome": ja, "criado": False}
+    origem_slug = _origem_deephat(modelo)
 
-    origem = _nome_instalado(modelo, instalados) or modelo
-    if not _nome_instalado(origem, instalados) and origem != modelo:
-        origem = modelo
-    if not _nome_instalado(origem, instalados):
-        # Origem ainda nao instalada — caller precisa puxar antes
+    origem = _nome_instalado(origem_slug, instalados)
+    if not origem:
+        for nome in instalados:
+            low = nome.lower()
+            if "deephat" in low and "deephat-hub" not in low:
+                origem = nome
+                break
+    if not origem:
+        for cand in (alias, *_DEEPHAT_ALIASES_LEGADOS):
+            hit = _nome_instalado(cand, instalados)
+            if hit:
+                origem = hit
+                break
+
+    if not origem:
         return {
             "ok": False,
             "nome": modelo,
             "criado": False,
-            "msg": f"Modelo base `{modelo}` nao instalado",
+            "msg": f"Modelo base DeepHat nao instalado (esperado `{origem_slug}`)",
         }
 
-    origem_exato = _nome_instalado(origem, instalados) or origem
-    criado = await _criar_modelo_chatml(origem_exato, alias)
+    ja = _nome_instalado(alias, instalados)
+    if ja and not force:
+        show = await _show_modelo(ja)
+        if _modelfile_tem_passthrough(show):
+            return {"ok": True, "nome": ja, "criado": False}
+
+    # Evita FROM == destino (recriar o mesmo nome)
+    mesmo = ja and ja.lower() == origem.lower()
+    passo1 = f"{alias}-building" if mesmo else alias
+    criado = await _criar_modelo_chatml(origem, passo1)
     if not criado.get("ok"):
         return {
             "ok": False,
-            "nome": origem_exato,
+            "nome": origem,
             "criado": False,
-            "msg": criado.get("msg") or "Falha ao criar alias ChatML",
+            "msg": criado.get("msg") or "Falha ao criar alias seguro do DeepHat",
         }
+
+    if passo1 != alias:
+        if ja:
+            await _delete_modelo_silencioso(ja)
+        criado2 = await _criar_modelo_chatml(passo1, alias)
+        await _delete_modelo_silencioso(passo1)
+        if not criado2.get("ok"):
+            return {
+                "ok": False,
+                "nome": passo1,
+                "criado": False,
+                "msg": criado2.get("msg") or "Falha ao promover alias DeepHat",
+            }
+
+    # Remove aliases legados (deephat-hub:q4 etc.) — blobs ficam no alias novo / base
+    for velho in _DEEPHAT_ALIASES_LEGADOS:
+        hit = _nome_instalado(velho, await listar_modelos_instalados())
+        if hit and hit.lower() != alias.lower():
+            await _delete_modelo_silencioso(hit)
+
     return {"ok": True, "nome": alias, "criado": True}
 
 
@@ -1594,6 +1754,8 @@ def iniciar_servico_ollama() -> dict:
             "stdout": subprocess.DEVNULL,
             "stderr": subprocess.DEVNULL,
             "stdin": subprocess.DEVNULL,
+            # Preferir TEMPLATE Go do Modelfile quando o GGUF tem Jinja quebrado (ex.: DeepHat).
+            "env": {**os.environ, "OLLAMA_GO_TEMPLATE": "1"},
         }
         if platform.system() == "Windows":
             kwargs["creationflags"] = (
@@ -1865,14 +2027,12 @@ async def _rodar_pull(modelo: str) -> None:
                         _pull_state["completed"] = int(ev["completed"])
         if not _pull_state["erro"] and _eh_deephat(modelo):
             _pull_state["status"] = "Ajustando template ChatML (DeepHat)..."
-            patch = await garantir_deephat_chatml(modelo)
+            patch = await garantir_deephat_chatml(modelo, force=True)
             if not patch.get("ok"):
-                _pull_state["erro"] = (
-                    "Download ok, mas falhou o alias ChatML do DeepHat: "
-                    f"{patch.get('msg') or 'erro desconhecido'}. "
-                    "No servidor: atualize o Ollama ou rode "
-                    f"`ollama create {_alias_deephat(modelo)} -f Modelfile` "
-                    "com TEMPLATE ChatML."
+                # Download ok — o chat tenta de novo (recria alias / atualiza Ollama)
+                _pull_state["status"] = (
+                    "Download ok. Alias DeepHat sera ajustado no primeiro chat "
+                    f"({patch.get('msg') or 'pendente'})."
                 )
             else:
                 _pull_state["status"] = "success"
@@ -1981,14 +2141,14 @@ async def stream_chat(
         return
 
     if _eh_deephat(nome_ollama) or _eh_deephat(modelo):
-        patch = await garantir_deephat_chatml(nome_ollama)
+        patch = await garantir_deephat_chatml(modelo if _eh_deephat(modelo) else nome_ollama)
         if patch.get("ok") and patch.get("nome"):
             nome_ollama = patch["nome"]
         elif patch.get("msg"):
             yield {
                 "erro": True,
                 "msg": (
-                    "DeepHat precisa de template ChatML (bug tojson/tools no llama-server). "
+                    "DeepHat: o hub nao conseguiu montar o alias sem Jinja. "
                     f"{patch['msg']}"
                 ),
             }
@@ -2055,35 +2215,86 @@ async def stream_chat(
                     continue
                 yield data
 
+    def _aviso_hub(msg: str) -> dict:
+        return {"hub": True, "tipo": "aviso", "msg": msg}
+
+    async def _tentar_chat(
+        client: httpx.AsyncClient, body: dict
+    ) -> tuple[bool, list[dict]]:
+        """Retorna (ok_sem_tojson, chunks). Se tojson, chunks tem so o erro."""
+        out: list[dict] = []
+        async for data in _ler_stream(client, body):
+            if data.get("erro") and _erro_template_tojson(data.get("msg", "")):
+                return False, [data]
+            out.append(data)
+        return True, out
+
+    async def _recuperar_tojson(client: httpx.AsyncClient, body: dict) -> AsyncIterator[dict]:
+        """Recria alias com PARSER + atualiza Ollama se preciso; tenta de novo."""
+        yield _aviso_hub("DeepHat: recriando alias sem Jinja (tojson/tools)...")
+        patch = await garantir_deephat_chatml(modelo, force=True)
+        if patch.get("ok") and patch.get("nome"):
+            ok, chunks = await _tentar_chat(client, {**body, "model": patch["nome"]})
+            if ok:
+                for c in chunks:
+                    yield c
+                return
+
+        yield _aviso_hub("DeepHat: atualizando Ollama pelo hub...")
+        upd = await atualizar_ollama_automatico()
+        if upd.get("precisa_ui"):
+            async for chunk in stream_install_ollama():
+                try:
+                    ev = json.loads(chunk.decode("utf-8"))
+                except Exception:
+                    continue
+                if ev.get("erro"):
+                    yield {
+                        "erro": True,
+                        "msg": ev.get("status") or ev.get("detalhe") or "Falha ao atualizar Ollama",
+                    }
+                    return
+                if ev.get("status"):
+                    yield _aviso_hub(ev["status"])
+        elif not upd.get("ok"):
+            yield {
+                "erro": True,
+                "msg": (
+                    "DeepHat ainda falha apos corrigir o modelo. "
+                    f"Atualizacao automatica do Ollama: {upd.get('msg') or 'falhou'}."
+                ),
+            }
+            return
+        else:
+            yield _aviso_hub(upd.get("msg") or "Ollama atualizado.")
+
+        patch2 = await garantir_deephat_chatml(modelo, force=True)
+        if not patch2.get("ok") or not patch2.get("nome"):
+            yield {
+                "erro": True,
+                "msg": (
+                    "Ollama atualizado, mas o alias DeepHat falhou: "
+                    f"{patch2.get('msg') or 'erro desconhecido'}"
+                ),
+            }
+            return
+        ok, chunks = await _tentar_chat(client, {**body, "model": patch2["nome"]})
+        for c in chunks:
+            yield c
+        if not ok:
+            yield {
+                "erro": True,
+                "msg": (
+                    "DeepHat continua falhando apos atualizar o Ollama e recriar o alias. "
+                    "Reinicie o hub e tente de novo."
+                ),
+            }
+
     try:
         async with httpx.AsyncClient(timeout=None) as client:
             async for data in _ler_stream(client, payload):
                 if data.get("erro") and _erro_template_tojson(data.get("msg", "")):
-                    # Modelo cru ainda; forca alias e tenta de novo uma vez
-                    base = nome_ollama if _eh_deephat(nome_ollama) else modelo
-                    patch = await garantir_deephat_chatml(base)
-                    if not patch.get("ok") or not patch.get("nome"):
-                        yield {
-                            "erro": True,
-                            "msg": (
-                                "DeepHat: template Jinja com `tojson`/`tools` derruba o "
-                                "llama-server. Atualize o hub e tente de novo, ou no PC Mint: "
-                                f"crie `{_alias_deephat(modelo)}` com TEMPLATE ChatML."
-                            ),
-                        }
-                        return
-                    if patch["nome"] == nome_ollama:
-                        yield {
-                            "erro": True,
-                            "msg": (
-                                "DeepHat ainda falha apos alias ChatML. "
-                                "Atualize o Ollama no PC Mint "
-                                "(`curl -fsSL https://ollama.com/install.sh | sh`)."
-                            ),
-                        }
-                        return
-                    payload = {**payload, "model": patch["nome"]}
-                    async for data2 in _ler_stream(client, payload):
+                    async for data2 in _recuperar_tojson(client, payload):
                         yield data2
                     return
                 yield data
