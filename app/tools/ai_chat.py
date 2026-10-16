@@ -1488,33 +1488,35 @@ def detectar_ollama_instalado() -> str | None:
                 return str(caminho)
     return None
 
+# Sufixo aplicado a todos os focos — corta firula e economiza tokens/tempo.
+SYSTEM_PROMPT_CURTO = (
+    "Estilo obrigatorio: resposta CURTA. Sem introducao, sem despedida, "
+    "sem repetir a pergunta, sem enrolacao. Va direto ao ponto. "
+    "Codigo/comando primeiro; explicacao so se for indispensavel "
+    "(no maximo poucas linhas). Listas so quando ajudarem."
+)
+
 SYSTEM_PROMPT_CODIGO = (
-    "Voce e um assistente senior especialista em engenharia de software, "
-    "arquitetura de sistemas, infraestrutura, Docker e desenvolvimento full-stack. "
-    "Seja direto, pratico, evite explicacoes excessivamente teoricas e foque em "
-    "fornecer codigo limpo, performatico e bem documentado em portugues."
+    "Assistente de engenharia de software (codigo, infra, Docker, full-stack). "
+    "Portugues. Pratico: codigo limpo e utilizavel, sem teoria longa."
 )
 
 SYSTEM_PROMPT_SEGURANCA = (
-    "Voce e DeepHat, um assistente especializado em cybersecurity, red team, "
-    "DevSecOps e analise ofensiva/defensiva. Seja direto e tecnico. "
-    "Forneca orientacao pratica, comandos, payloads e raciocinio de ataque/defesa "
-    "quando solicitado. Responda em portugues."
+    "Voce e DeepHat: cybersecurity, red team, DevSecOps. Portugues. "
+    "Direto e tecnico — comandos, payloads e passos objetivos quando pedido."
 )
 
 SYSTEM_PROMPT_GERAL = (
-    "Voce e um assistente util, claro e objetivo. Responda em portugues, "
-    "com foco em praticidade. Quando fizer sentido, use listas e exemplos curtos."
+    "Assistente util em portugues. Objetivo e pratico."
 )
 
 SYSTEM_PROMPT_RACIOCINIO = (
-    "Voce e um assistente de raciocinio analitico. Pense passo a passo, "
-    "mostre a logica de forma clara e chegue a uma conclusao objetiva. "
-    "Responda em portugues."
+    "Raciocinio analitico em portugues. Passos curtos, conclusao clara — "
+    "sem digressao."
 )
 
 SYSTEM_PROMPT_LEVE = (
-    "Voce e um assistente conciso. Respostas curtas e diretas em portugues."
+    "Assistente ultraconciso em portugues. Uma resposta minima basta."
 )
 
 SYSTEM_PROMPTS_FOCO = {
@@ -1548,7 +1550,8 @@ def _foco_do_modelo(modelo: str) -> str:
 
 
 def _system_prompt_para(modelo: str) -> str:
-    return SYSTEM_PROMPTS_FOCO.get(_foco_do_modelo(modelo), SYSTEM_PROMPT_CODIGO)
+    base = SYSTEM_PROMPTS_FOCO.get(_foco_do_modelo(modelo), SYSTEM_PROMPT_CODIGO)
+    return f"{base} {SYSTEM_PROMPT_CURTO}"
 
 
 async def obter_tamanhos_ollama() -> dict[str, float]:
@@ -2188,8 +2191,10 @@ async def stream_chat(
         "stream": True,
         "keep_alive": "30s",
         "options": {
-            "temperature": 0.3,
+            "temperature": 0.2,
             "num_ctx": ctx,
+            # Soft cap: evita monologo; codigo longo ainda cabe (~3-4k tokens).
+            "num_predict": min(4096, max(512, ctx // 4)),
         },
     }
 
